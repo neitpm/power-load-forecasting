@@ -123,6 +123,10 @@ def generate_master_benchmark_table():
 4. **Đánh giá toàn diện:**
    - **Residual KAN** đạt ưu thế rõ rệt và vượt trội về **MAE, RMSE và R²**.
    - **Persistence Naive** vẫn giữ vị trí dẫn đầu về **sMAPE (13.35%)** và là mốc baseline bắt buộc phải có để đối chiếu trong bài toán dự báo phụ tải ngắn hạn 30 phút.
+
+5. **Kiểm soát rò rỉ dữ liệu (Data Leakage Control):**
+   - Bộ điền khuyết thiếu (`SimpleImputer`) và bộ chuẩn hóa (`StandardScaler`) được tính toán (`fit`) **nghiêm ngặt chỉ trên tập Train** (giai đoạn 03/2020 đến 01/2024), sau đó chỉ áp dụng phép chuyển đổi (`transform`) sang tập Validation và Test.
+   - Các siêu tham số dừng sớm (Early Stopping) được theo dõi độc lập trên tập Validation (01/2024 đến 11/2024). Tập Test tuyệt đối không tham gia vào bất kỳ khâu huấn luyện hay điều chỉnh ngưỡng nào.
 """
 
     with open(reports_dir / "master_model_comparison_benchmark.md", "w", encoding="utf-8") as f:
