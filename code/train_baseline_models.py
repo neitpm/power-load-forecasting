@@ -169,13 +169,27 @@ def run_baseline_benchmarks(
     predictions = {}
     predictions["y_true"] = y_test.values
 
+    # Lọc mask chung (chỉ số đánh giá đồng nhất cho MỌI mô hình để đảm bảo so sánh 100% công bằng)
+    pred_persistence = test_df["P_kW"].values
+    pred_s48 = test_df["lag_48"].values
+    pred_s336 = test_df["lag_336"].values
+    pred_ma3 = test_df["rolling_mean_3"].values
+
+    mask_common = (
+        np.isfinite(y_test.values) &
+        np.isfinite(pred_persistence) &
+        np.isfinite(pred_s48) &
+        np.isfinite(pred_s336) &
+        np.isfinite(pred_ma3)
+    )
+    print(f"\n[3/5] Tập Test có {len(test_df):,} mẫu. Lọc tập đánh giá đồng nhất (Common Valid Subset): {mask_common.sum():,} mẫu.")
+    print("      (Tất cả mô hình từ Naive đến GBDT sẽ được đối chiếu trên CHÍNH XÁC cùng tập mẫu này)")
+
     # -------------------------------------------------------------------------
     # Baseline 1: Persistence Naive (y_hat[t+1] = P[t])
     # -------------------------------------------------------------------------
-    print("\n[3/5] Đang huấn luyện & đánh giá các mô hình Baseline trên tập Test...")
     print("      -> [Model 1] Persistence Naive (y_hat = P_t)...")
-    pred_persistence = test_df["P_kW"].values
-    res_pers = evaluate_regression(y_test.values, pred_persistence, "1. Persistence Naive (P_t)")
+    res_pers = evaluate_regression(y_test.values[mask_common], pred_persistence[mask_common], "1. Persistence Naive (P_t)")
     results.append(res_pers)
     predictions["Persistence"] = pred_persistence
 
@@ -183,8 +197,7 @@ def run_baseline_benchmarks(
     # Baseline 2: Seasonal Naive 24h (y_hat[t+1] = lag_48)
     # -------------------------------------------------------------------------
     print("      -> [Model 2] Seasonal Naive 24h (y_hat = lag_48)...")
-    pred_s48 = test_df["lag_48"].values
-    res_s48 = evaluate_regression(y_test.values, pred_s48, "2. Seasonal Naive 24h (lag_48)")
+    res_s48 = evaluate_regression(y_test.values[mask_common], pred_s48[mask_common], "2. Seasonal Naive 24h (lag_48)")
     results.append(res_s48)
     predictions["Seasonal_24h"] = pred_s48
 
@@ -192,8 +205,7 @@ def run_baseline_benchmarks(
     # Baseline 3: Seasonal Naive 7 ngày (y_hat[t+1] = lag_336)
     # -------------------------------------------------------------------------
     print("      -> [Model 3] Seasonal Naive 7 ngày (y_hat = lag_336)...")
-    pred_s336 = test_df["lag_336"].values
-    res_s336 = evaluate_regression(y_test.values, pred_s336, "3. Seasonal Naive 7d (lag_336)")
+    res_s336 = evaluate_regression(y_test.values[mask_common], pred_s336[mask_common], "3. Seasonal Naive 7d (lag_336)")
     results.append(res_s336)
     predictions["Seasonal_7d"] = pred_s336
 
@@ -208,8 +220,7 @@ def run_baseline_benchmarks(
     # Baseline 4: Moving Average 3 bước (y_hat[t+1] = rolling_mean_3)
     # -------------------------------------------------------------------------
     print("      -> [Model 4] Rolling Moving Average 3 steps (1.5h)...")
-    pred_ma3 = test_df["rolling_mean_3"].values
-    res_ma3 = evaluate_regression(y_test.values, pred_ma3, "4. Moving Average (1.5h)")
+    res_ma3 = evaluate_regression(y_test.values[mask_common], pred_ma3[mask_common], "4. Moving Average (1.5h)")
     results.append(res_ma3)
     predictions["Moving_Average"] = pred_ma3
 
@@ -224,7 +235,7 @@ def run_baseline_benchmarks(
     ridge = Ridge(alpha=1.0, random_state=42)
     ridge.fit(X_train_imp, y_train)
     pred_ridge = ridge.predict(X_test_imp)
-    res_ridge = evaluate_regression(y_test.values, pred_ridge, "5. Ridge Regression")
+    res_ridge = evaluate_regression(y_test.values[mask_common], pred_ridge[mask_common], "5. Ridge Regression")
     results.append(res_ridge)
     predictions["Ridge"] = pred_ridge
 
@@ -249,7 +260,7 @@ def run_baseline_benchmarks(
     )
     t_xgb = time.time() - t0
     pred_xgb = xgb_reg.predict(X_test_f32)
-    res_xgb = evaluate_regression(y_test.values, pred_xgb, "6. XGBoost Regressor")
+    res_xgb = evaluate_regression(y_test.values[mask_common], pred_xgb[mask_common], "6. XGBoost Regressor")
     res_xgb["training_time_sec"] = round(t_xgb, 2)
     results.append(res_xgb)
     predictions["XGBoost"] = pred_xgb
@@ -286,7 +297,7 @@ def run_baseline_benchmarks(
         best_gbdt_name = "HistGradientBoosting"
 
     t_lgb = time.time() - t0
-    res_lgb = evaluate_regression(y_test.values, pred_lgb, f"7. {best_gbdt_name} Regressor")
+    res_lgb = evaluate_regression(y_test.values[mask_common], pred_lgb[mask_common], f"7. {best_gbdt_name} Regressor")
     res_lgb["training_time_sec"] = round(t_lgb, 2)
     results.append(res_lgb)
     predictions["LightGBM"] = pred_lgb
