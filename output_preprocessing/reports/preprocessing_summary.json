@@ -1,0 +1,23 @@
+{
+    "timestamp": "2026-10-16T15:56:38.899172",
+    "total_files_read": 67,
+    "raw_rows": 661801,
+    "clean_rows": 813356,
+    "selected_target_point": 8667,
+    "split_info": {
+        "train_rows": 66234,
+        "train_start": "2020-03-01 00:00:00",
+        "train_end": "2024-01-16 05:30:00",
+        "val_rows": 14193,
+        "val_start": "2024-01-16 06:00:00",
+        "val_end": "2024-11-07 21:00:00",
+        "test_rows": 14193,
+        "test_start": "2024-11-07 21:30:00",
+        "test_end": "2026-10-16 04:00:00"
+    },
+    "paths": {
+        "clean_data_dir": "C:\\Users\\DELL\\Desktop\\Tam_TLU\\output_preprocessing\\data",
+        "reports_dir": "C:\\Users\\DELL\\Desktop\\Tam_TLU\\output_preprocessing\\reports",
+        "figures_dir": "C:\\Users\\DELL\\Desktop\\Tam_TLU\\output_preprocessing\\figures"
+    }
+}

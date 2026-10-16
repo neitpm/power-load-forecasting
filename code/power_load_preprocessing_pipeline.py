@@ -19,6 +19,14 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 
+# Đảm bảo in tiếng Việt chuẩn trên Windows console
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -61,7 +69,7 @@ def parse_time_robust(df: pd.DataFrame) -> pd.Series:
         raise ValueError(f"Không tìm thấy cột thời gian trong: {df.columns.tolist()}")
 
     s_time = df[time_col].astype(str).str.strip()
-    parsed = pd.to_datetime(s_time, errors="coerce")
+    parsed = pd.to_datetime(s_time, errors="coerce", format="mixed")
     if parsed.notna().mean() >= 0.8:
         return parsed
 
@@ -69,7 +77,7 @@ def parse_time_robust(df: pd.DataFrame) -> pd.Series:
     date_col = next((c for c in date_candidates if c in df.columns), None)
 
     if date_col:
-        s_date = pd.to_datetime(df[date_col], errors="coerce")
+        s_date = pd.to_datetime(df[date_col], errors="coerce", format="mixed")
         s_time_fixed = s_time.str.replace(r"\s+", "", regex=True)
         s_time_fixed = s_time_fixed.where(s_time_fixed.str.count(":") == 2, "00:" + s_time_fixed)
         return s_date + pd.to_timedelta(s_time_fixed, errors="coerce")
@@ -160,6 +168,9 @@ def resample_and_impute_30m_grid(df: pd.DataFrame) -> pd.DataFrame:
 
     resampled_list = []
     for point_id, group in df_dedup.groupby("MaDiemDo"):
+        # Xóa cột TIME thô trước khi đưa TIME_30m lên làm index để tránh trùng tên khi reset_index
+        if "TIME" in group.columns:
+            group = group.drop(columns=["TIME"])
         group = group.set_index("TIME_30m").sort_index()
 
         t_start = group.index.min()
@@ -182,7 +193,7 @@ def resample_and_impute_30m_grid(df: pd.DataFrame) -> pd.DataFrame:
         group_reindexed[present_nums] = imputed_vals
         group_reindexed["is_imputed"] = is_imputed.astype(int)
 
-        resampled_list.append(group_reindexed.reset_index().rename(columns={"index": "TIME"}))
+        resampled_list.append(group_reindexed.reset_index())
 
     return pd.concat(resampled_list, ignore_index=True)
 

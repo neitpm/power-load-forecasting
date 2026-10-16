@@ -49,3 +49,6 @@ Desktop.ini
 # Logs & Temporary files
 *.log
 *.tmp
+
+# Large generated data outputs (>100MB blocked by GitHub)
+output_preprocessing/data/
