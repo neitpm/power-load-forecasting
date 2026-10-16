@@ -1,0 +1,8 @@
+﻿model_name,samples_evaluated,MAE_kW,RMSE_kW,MAE_MW,RMSE_MW,sMAPE_pct,R2_score,training_time_sec
+1. Persistence Naive (P_t),14435,602.71,1172.22,0.6027,1.1722,13.44,0.8745,
+2. Seasonal Naive 24h (lag_48),14416,1363.03,2495.51,1.363,2.4955,30.41,0.4314,
+3. Seasonal Naive 7d (lag_336),14416,1884.69,3125.33,1.8847,3.1253,42.57,0.1092,
+4. Moving Average (1.5h),14437,1019.64,1592.29,1.0196,1.5923,21.82,0.7686,
+5. Ridge Regression,14440,773.17,1276.94,0.7732,1.2769,25.58,0.8512,
+6. XGBoost Regressor,14440,776.46,1263.55,0.7765,1.2635,25.74,0.8543,1.97
+7. HistGradientBoosting Regressor,14440,746.56,1224.95,0.7466,1.2249,24.65,0.8631,2.43

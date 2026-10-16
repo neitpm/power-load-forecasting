@@ -43,7 +43,7 @@ plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['figure.titlesize'] = 14
 plt.rcParams['axes.labelsize'] = 11
 
-NUMERIC_COLS = ["UA", "UB", "UC", "IA", "IB", "IC", "CosF", "P_kW", "Q_kVAr"]
+NUMERIC_COLS = ["UA", "UB", "UC", "IA", "IB", "IC", "CosF", "P_kW", "Q_kVAr", "P_MW", "Q_MVAr"]
 MIN_VALID_DATE = pd.to_datetime("2020-01-01 00:00:00")
 MAX_VALID_DATE = pd.to_datetime("2025-08-31 23:59:59")
 
@@ -128,9 +128,21 @@ def load_and_standardize_single_file(file_path: Path) -> pd.DataFrame:
     if len(df) == 0:
         return pd.DataFrame()
 
-    for c in NUMERIC_COLS:
+    raw_num_cols = ["UA", "UB", "UC", "IA", "IB", "IC", "CosF", "P_kW", "Q_kVAr"]
+    for c in raw_num_cols:
         if c in df.columns:
             df[c] = clean_single_numeric_series(df[c])
+
+    # CHUẨN HÓA ĐƠN VỊ VẬT LÝ CHÍNH XÁC:
+    # Giá trị trong cột gốc 'P_kW' thực chất là Megawatt (MW) (ví dụ: 9.3408 MW ~ 9,340.8 kW).
+    # Giá trị trong cột gốc 'Q_kVAr' thực chất là MVAr (ví dụ: 1.156 MVAr ~ 1,156.0 kVAr).
+    # Chuẩn hóa tạo cả 2 biến để báo cáo và mô hình không bị nhầm lẫn bậc độ lớn:
+    if "P_kW" in df.columns:
+        df["P_MW"] = df["P_kW"].copy()
+        df["P_kW"] = df["P_MW"] * 1000.0
+    if "Q_kVAr" in df.columns:
+        df["Q_MVAr"] = df["Q_kVAr"].copy()
+        df["Q_kVAr"] = df["Q_MVAr"] * 1000.0
 
     if "MaDiemDo" in df.columns:
         df["MaDiemDo"] = pd.to_numeric(df["MaDiemDo"], errors="coerce")
@@ -307,6 +319,7 @@ def engineer_features(df_long: pd.DataFrame) -> pd.DataFrame:
 
     if "P_kW" in df.columns and "Q_kVAr" in df.columns:
         df["S_kVA"] = np.sqrt(df["P_kW"].fillna(0)**2 + df["Q_kVAr"].fillna(0)**2)
+        df["S_MVA"] = df["S_kVA"] / 1000.0
 
     df["hour"] = df["TIME"].dt.hour + df["TIME"].dt.minute / 60.0
     df["dayofweek"] = df["TIME"].dt.dayofweek
@@ -322,10 +335,17 @@ def engineer_features(df_long: pd.DataFrame) -> pd.DataFrame:
         grp = grp.sort_values("TIME").copy()
         for lag in [1, 2, 3, 48, 336]:
             grp[f"lag_{lag}"] = grp["P_kW"].shift(lag)
+            if "P_MW" in grp.columns:
+                grp[f"lag_mw_{lag}"] = grp["P_MW"].shift(lag)
         p_prev = grp["P_kW"].shift(1)
         grp["rolling_mean_3"] = p_prev.rolling(3, min_periods=1).mean()
         grp["rolling_mean_6"] = p_prev.rolling(6, min_periods=1).mean()
         grp["rolling_mean_48"] = p_prev.rolling(48, min_periods=1).mean()
+        if "P_MW" in grp.columns:
+            p_mw_prev = grp["P_MW"].shift(1)
+            grp["rolling_mean_mw_3"] = p_mw_prev.rolling(3, min_periods=1).mean()
+            grp["rolling_mean_mw_6"] = p_mw_prev.rolling(6, min_periods=1).mean()
+            grp["rolling_mean_mw_48"] = p_mw_prev.rolling(48, min_periods=1).mean()
         feat_groups.append(grp)
 
     return pd.concat(feat_groups, ignore_index=True)
@@ -340,6 +360,7 @@ def generate_station_summary(df_raw: pd.DataFrame, df_grid: pd.DataFrame, df_cle
     1. Thiếu trong file gốc (Raw Missing P_kW).
     2. Thiếu do tạo lưới 30m liên tục (Grid Gap Missing).
     3. Thiếu còn lại sau nội suy <= 2 bước (Remaining Missing).
+    Đồng thời hiển thị công suất theo cả 2 đơn vị chuẩn: kW và MW.
     """
     summary = []
     total_slots = df_grid["TIME"].nunique()
@@ -361,8 +382,10 @@ def generate_station_summary(df_raw: pd.DataFrame, df_grid: pd.DataFrame, df_cle
         clean_missing_pct = (clean_missing / total_slots) * 100
 
         imputed_count = int(clean_sub["is_imputed"].sum())
-        p_mean = clean_sub["P_kW"].mean()
-        p_max = clean_sub["P_kW"].max()
+        p_mean_kw = clean_sub["P_kW"].mean()
+        p_max_kw = clean_sub["P_kW"].max()
+        p_mean_mw = clean_sub["P_MW"].mean() if "P_MW" in clean_sub.columns else (p_mean_kw / 1000.0 if pd.notna(p_mean_kw) else None)
+        p_max_mw = clean_sub["P_MW"].max() if "P_MW" in clean_sub.columns else (p_max_kw / 1000.0 if pd.notna(p_max_kw) else None)
 
         summary.append({
             "MaDiemDo": pid,
@@ -373,8 +396,10 @@ def generate_station_summary(df_raw: pd.DataFrame, df_grid: pd.DataFrame, df_cle
             "grid_missing_pct": round(float(grid_missing_pct), 2),
             "imputed_steps_count": imputed_count,
             "remaining_missing_pct": round(float(clean_missing_pct), 2),
-            "P_mean_kW": round(float(p_mean), 3) if pd.notna(p_mean) else None,
-            "P_max_kW": round(float(p_max), 3) if pd.notna(p_max) else None
+            "P_mean_kW": round(float(p_mean_kw), 1) if pd.notna(p_mean_kw) else None,
+            "P_max_kW": round(float(p_max_kw), 1) if pd.notna(p_max_kw) else None,
+            "P_mean_MW": round(float(p_mean_mw), 3) if pd.notna(p_mean_mw) else None,
+            "P_max_MW": round(float(p_max_mw), 3) if pd.notna(p_max_mw) else None
         })
 
     df_summary = pd.DataFrame(summary).sort_values(by="P_mean_kW", ascending=False).reset_index(drop=True)
@@ -385,19 +410,35 @@ def generate_station_summary(df_raw: pd.DataFrame, df_grid: pd.DataFrame, df_cle
 # =============================================================================
 # 9. TẠO BIẾN MỤC TIÊU CHO BÀI TOÁN HỌC CÓ GIÁM SÁT
 # =============================================================================
-def build_supervised_subset(df_featured_subset: pd.DataFrame, target_point: int, threshold_kw: float = 0.5):
+def build_supervised_subset(df_featured_subset: pd.DataFrame, target_point: int, threshold_kw: float = 50.0):
+    """
+    Tạo biến mục tiêu:
+    - target_P_kW: Công suất tại thời điểm t + 30 phút (kW)
+    - target_P_MW: Công suất tại thời điểm t + 30 phút (MW)
+    - target_delta_P_kW: Mức biến thiên Delta P = P[t+1] - P[t] (kW)
+    - target_direction: Phân loại TĂNG / GIẢM / KHÔNG ĐỔI dựa trên ngưỡng biến thiên threshold_kw
+      (Mặc định 50 kW ~ 0.05 MW, tương đương ~0.6% công suất trung bình trạm 8,000 kW)
+    """
     sub = df_featured_subset[df_featured_subset["MaDiemDo"] == target_point].sort_values("TIME").copy()
 
-    # Nhãn mục tiêu P[t+1]
+    # Nhãn mục tiêu P[t+1] theo cả kW và MW
     sub["target_P_kW"] = sub["P_kW"].shift(-1)
+    if "P_MW" in sub.columns:
+        sub["target_P_MW"] = sub["P_MW"].shift(-1)
+    else:
+        sub["target_P_MW"] = sub["target_P_kW"] / 1000.0
+
     # Loại bỏ dòng không có target (dòng cuối cùng của tập)
     sub = sub.dropna(subset=["target_P_kW"]).copy()
 
     # Mức biến thiên và phân loại xu hướng
-    sub["target_delta_P"] = sub["target_P_kW"] - sub["P_kW"]
+    sub["target_delta_P_kW"] = sub["target_P_kW"] - sub["P_kW"]
+    sub["target_delta_P_MW"] = sub["target_P_MW"] - sub["P_MW"]
+    sub["target_delta_P"] = sub["target_delta_P_kW"]  # Biến delta mặc định theo kW
+
     conditions = [
-        sub["target_delta_P"] > threshold_kw,
-        sub["target_delta_P"] < -threshold_kw
+        sub["target_delta_P_kW"] > threshold_kw,
+        sub["target_delta_P_kW"] < -threshold_kw
     ]
     sub["target_direction"] = np.select(conditions, ["TĂNG", "GIẢM"], default="KHÔNG ĐỔI")
     return sub
@@ -414,9 +455,9 @@ def generate_evaluation_figures(df_raw: pd.DataFrame, df_clean: pd.DataFrame, df
     # --- 1. Toàn cảnh chuỗi phụ tải & Đối chiếu phục hồi nội suy ---
     fig1, (ax1a, ax1b) = plt.subplots(2, 1, figsize=(16, 9))
     sample_month = clean_target.iloc[:1440]  # 30 ngày mẫu
-    ax1a.plot(sample_month.index, sample_month["P_kW"], color="#1f77b4", lw=1.2, label=f"Trạm {target_point} (30 ngày)")
-    ax1a.set_title("1A. Toàn cảnh chuỗi phụ tải P (kW) sau làm sạch (Khung 30 ngày)", fontsize=13, fontweight="bold")
-    ax1a.set_ylabel("P (kW)")
+    ax1a.plot(sample_month.index, sample_month["P_kW"], color="#1f77b4", lw=1.2, label=f"Điểm đo {target_point} (30 ngày)")
+    ax1a.set_title(f"1A. Toàn cảnh chuỗi phụ tải P (kW) sau làm sạch (Khung 30 ngày - Điểm đo {target_point})", fontsize=13, fontweight="bold")
+    ax1a.set_ylabel("Công suất P (kW)")
     ax1a.legend(loc="upper right")
 
     t0 = clean_target.index.min()
@@ -426,7 +467,7 @@ def generate_evaluation_figures(df_raw: pd.DataFrame, df_clean: pd.DataFrame, df
     ax1b.plot(r_slice.index, r_slice["P_kW"], "r.", markersize=8, alpha=0.6, label="Dữ liệu gốc (Bị thiếu / Lệch giây)")
     ax1b.plot(c_slice.index, c_slice["P_kW"], color="#2ca02c", lw=1.5, alpha=0.9, label="Đã quy chuẩn lưới 30m & Nội suy ngắn (<=2 bước)")
     ax1b.set_title("1B. Kiểm chứng phục hồi dữ liệu: So sánh Gốc vs Sau xử lý (Zoom 7 ngày)", fontsize=13, fontweight="bold")
-    ax1b.set_ylabel("P (kW)")
+    ax1b.set_ylabel("Công suất P (kW)")
     ax1b.legend(loc="upper right")
     fig1.tight_layout()
     fig1.savefig(figures_dir / "01_load_timeline_and_imputation.png", dpi=200)
@@ -434,7 +475,8 @@ def generate_evaluation_figures(df_raw: pd.DataFrame, df_clean: pd.DataFrame, df
 
     # --- 2. Tỷ lệ khuyết dữ liệu gốc (%) ---
     fig2, ax2 = plt.subplots(figsize=(11, 4.5))
-    missing_p = (df_raw[NUMERIC_COLS].isna().mean() * 100).sort_values(ascending=True)
+    missing_cols = [c for c in ["UA", "UB", "UC", "IA", "IB", "IC", "CosF", "P_kW", "Q_kVAr"] if c in df_raw.columns]
+    missing_p = (df_raw[missing_cols].isna().mean() * 100).sort_values(ascending=True)
     bars2 = ax2.barh(missing_p.index, missing_p.values, color=sns.color_palette("Blues_r", len(missing_p)))
     ax2.set_title("2. Đánh giá tỷ lệ khuyết dữ liệu gốc theo từng biến số (%)", fontsize=13, fontweight="bold")
     for b in bars2:
@@ -447,17 +489,19 @@ def generate_evaluation_figures(df_raw: pd.DataFrame, df_clean: pd.DataFrame, df
     # --- 3. Phân phối xác suất & Boxplot ---
     fig3, axes3 = plt.subplots(1, 2, figsize=(15, 5.5))
     p_data = clean_target["P_kW"].dropna()
+    p_mean_val = p_data.mean()
+    p_med_val = p_data.median()
     sns.histplot(p_data, bins=60, kde=True, ax=axes3[0], color="#1f77b4", edgecolor="black", alpha=0.6)
-    axes3[0].axvline(p_data.mean(), color="red", linestyle="--", lw=2, label=f"Mean = {p_data.mean():.2f}")
-    axes3[0].axvline(p_data.median(), color="green", linestyle="-.", lw=2, label=f"Median = {p_data.median():.2f}")
-    axes3[0].set_title("Phân phối xác suất (Histogram & KDE) của P_kW", fontsize=12, fontweight="bold")
-    axes3[0].set_xlabel("P (kW)")
+    axes3[0].axvline(p_mean_val, color="red", linestyle="--", lw=2, label=f"Mean = {p_mean_val:,.1f} kW ({p_mean_val/1000:.2f} MW)")
+    axes3[0].axvline(p_med_val, color="green", linestyle="-.", lw=2, label=f"Median = {p_med_val:,.1f} kW ({p_med_val/1000:.2f} MW)")
+    axes3[0].set_title("Phân phối xác suất (Histogram & KDE) của P (kW)", fontsize=12, fontweight="bold")
+    axes3[0].set_xlabel("Công suất P (kW)")
     axes3[0].legend()
 
     sns.boxplot(y=p_data, ax=axes3[1], color="#98df8a")
-    axes3[1].set_title("Biểu đồ Boxplot: Khoảng tứ phân vị & Giới hạn", fontsize=12, fontweight="bold")
-    axes3[1].set_ylabel("P (kW)")
-    fig3.suptitle("3. Kiểm định phân phối và lọc ngoại lai công suất P_kW", fontsize=15, fontweight="bold")
+    axes3[1].set_title("Biểu đồ Boxplot: Khoảng tứ phân vị & Ngoại lai của P (kW)", fontsize=12, fontweight="bold")
+    axes3[1].set_ylabel("Công suất P (kW)")
+    fig3.suptitle("3. Kiểm định phân phối và biên độ công suất thực tế P (kW)", fontsize=15, fontweight="bold")
     fig3.tight_layout()
     fig3.savefig(figures_dir / "03_power_distribution_and_anomaly.png", dpi=200)
     plt.close(fig3)
@@ -473,14 +517,14 @@ def generate_evaluation_figures(df_raw: pd.DataFrame, df_clean: pd.DataFrame, df
 
     # --- 5. Đánh giá biến mục tiêu (Delta P & Nhãn xu hướng) ---
     fig5, axes5 = plt.subplots(1, 2, figsize=(15, 5.5))
-    sns.histplot(df_supervised["target_delta_P"].dropna(), bins=70, kde=True, ax=axes5[0], color="#9467bd")
+    sns.histplot(df_supervised["target_delta_P_kW"].dropna(), bins=70, kde=True, ax=axes5[0], color="#9467bd")
     axes5[0].axvline(0, color="red", linestyle="--", lw=1.5)
     axes5[0].set_title("Phân phối Delta P = P[t+1] - P[t] (kW)", fontsize=12, fontweight="bold")
     axes5[0].set_xlabel("Delta P (kW)")
 
     d_counts = df_supervised["target_direction"].value_counts()
     bars5 = axes5[1].bar(d_counts.index, d_counts.values, color=["#2ca02c", "#d62728", "#7f7f7f"][:len(d_counts)], edgecolor="black")
-    axes5[1].set_title("Tỷ lệ nhãn xu hướng (TĂNG / GIẢM / KHÔNG ĐỔI)", fontsize=12, fontweight="bold")
+    axes5[1].set_title("Tỷ lệ nhãn xu hướng (Ngưỡng biến thiên |Delta P| >= 50 kW)", fontsize=12, fontweight="bold")
     for b in bars5:
         h = b.get_height()
         axes5[1].text(b.get_x() + b.get_width()/2, h + 10, f"{h:,}\n({h/len(df_supervised)*100:.1f}%)", ha="center", fontsize=10, fontweight="bold")
@@ -498,7 +542,7 @@ def generate_evaluation_figures(df_raw: pd.DataFrame, df_clean: pd.DataFrame, df
     ax6.plot([m_val, mx_val], [m_val, mx_val], "r--", lw=2, label="Đường y = x")
     r = df_supervised[["P_kW", "target_P_kW"]].corr().iloc[0, 1]
     ax6.set_title(f"6. Tương quan tuyến tính P[t] vs P[t+1] (r = {r:.4f})", fontsize=13, fontweight="bold")
-    ax6.set_xlabel("Công suất P[t] (kW)")
+    ax6.set_xlabel("Công suất hiện tại P[t] (kW)")
     ax6.set_ylabel("Công suất sau 30 phút P[t+1] (kW)")
     ax6.legend(loc="upper left")
     fig6.tight_layout()
@@ -511,14 +555,16 @@ def generate_evaluation_figures(df_raw: pd.DataFrame, df_clean: pd.DataFrame, df
     h_s = clean_target.groupby(clean_target.index.hour)["P_kW"].std()
     axes7[0].plot(h_m.index, h_m.values, marker="o", color="#ff7f0e", lw=2.5)
     axes7[0].fill_between(h_m.index, h_m.values - h_s.values, h_m.values + h_s.values, color="#ff7f0e", alpha=0.2)
-    axes7[0].set_title("Phụ tải trung bình theo 24 giờ trong ngày", fontsize=12, fontweight="bold")
+    axes7[0].set_title("Phụ tải trung bình theo 24 giờ trong ngày (kW)", fontsize=12, fontweight="bold")
     axes7[0].set_xlabel("Giờ trong ngày (0 - 23)")
+    axes7[0].set_ylabel("Công suất P trung bình (kW)")
     axes7[0].set_xticks(range(0, 24))
 
     dow_names = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
     d_m = clean_target.groupby(clean_target.index.dayofweek)["P_kW"].mean()
     axes7[1].bar(dow_names[:len(d_m)], d_m.values, color=sns.color_palette("Set2", len(d_m)), edgecolor="black")
-    axes7[1].set_title("Phụ tải trung bình theo ngày trong tuần", fontsize=12, fontweight="bold")
+    axes7[1].set_title("Phụ tải trung bình theo ngày trong tuần (kW)", fontsize=12, fontweight="bold")
+    axes7[1].set_ylabel("Công suất P trung bình (kW)")
     fig7.suptitle("7. Đánh giá tính mùa vụ phụ tải điện (Seasonality Profile)", fontsize=15, fontweight="bold")
     fig7.tight_layout()
     fig7.savefig(figures_dir / "07_daily_and_weekly_seasonality.png", dpi=200)
@@ -536,7 +582,7 @@ def generate_evaluation_figures(df_raw: pd.DataFrame, df_clean: pd.DataFrame, df
     ax8.plot(df_sup_sorted.iloc[v_idx:]["TIME"], df_sup_sorted.iloc[v_idx:]["P_kW"], color="#2ca02c", label="Test (15%)", lw=1)
     ax8.set_title("8. Phân chia tập dữ liệu tuần tự theo thời gian (Thực tế: 03/2020 -> 08/2025)", fontsize=13, fontweight="bold")
     ax8.set_xlabel("Thời gian")
-    ax8.set_ylabel("P (kW)")
+    ax8.set_ylabel("Công suất P (kW)")
     ax8.legend(loc="upper right")
     fig8.tight_layout()
     fig8.savefig(figures_dir / "08_data_split_timeline.png", dpi=200)
@@ -550,7 +596,7 @@ def run_pipeline(
     data_dir_str: str,
     output_dir_str: str = "output_preprocessing",
     target_point: int = None,
-    threshold_kw: float = 0.5
+    threshold_kw: float = 50.0
 ):
     base_out = Path(output_dir_str)
     data_out = base_out / "data"
@@ -615,7 +661,7 @@ def run_pipeline(
     df_clean_long = pd.concat([train_clean, val_clean, test_clean], ignore_index=True)
     df_clean_long.to_csv(data_out / "cleaned_long.csv", index=False, encoding="utf-8-sig")
 
-    df_wide = df_clean_long.pivot_table(index="TIME", columns="MaDiemDo", values=["P_kW", "Q_kVAr"], aggfunc="first")
+    df_wide = df_clean_long.pivot_table(index="TIME", columns="MaDiemDo", values=["P_kW", "P_MW", "Q_kVAr"], aggfunc="first")
     df_wide.columns = [f"{var}_{pt}" for (var, pt) in df_wide.columns]
     df_wide.reset_index().to_csv(data_out / "cleaned_wide.csv", index=False, encoding="utf-8-sig")
 
@@ -689,7 +735,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str, default=None)
     parser.add_argument("--output_dir", type=str, default="output_preprocessing")
     parser.add_argument("--target_point", type=int, default=None)
-    parser.add_argument("--threshold_kw", type=float, default=0.5)
+    parser.add_argument("--threshold_kw", type=float, default=50.0)
     args = parser.parse_args()
 
     if args.data_dir:

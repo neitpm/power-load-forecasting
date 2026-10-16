@@ -13,4 +13,6 @@ IC,float64,786,0.12,38095
 CosF,float64,894,0.14,357
 P_kW,float64,1065,0.16,37365
 Q_kVAr,float64,948,0.15,16706
+P_MW,float64,1065,0.16,37365
+Q_MVAr,float64,948,0.15,16706
 source_file,object,0,0.0,65

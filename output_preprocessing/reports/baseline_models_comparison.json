@@ -1,0 +1,115 @@
+{
+    "timestamp": "2026-10-16T16:34:26.678894",
+    "test_samples": 14440,
+    "regression_benchmarks": [
+        {
+            "model_name": "1. Persistence Naive (P_t)",
+            "samples_evaluated": 14435,
+            "MAE_kW": 602.71,
+            "RMSE_kW": 1172.22,
+            "MAE_MW": 0.6027,
+            "RMSE_MW": 1.1722,
+            "sMAPE_pct": 13.44,
+            "R2_score": 0.8745
+        },
+        {
+            "model_name": "2. Seasonal Naive 24h (lag_48)",
+            "samples_evaluated": 14416,
+            "MAE_kW": 1363.03,
+            "RMSE_kW": 2495.51,
+            "MAE_MW": 1.363,
+            "RMSE_MW": 2.4955,
+            "sMAPE_pct": 30.41,
+            "R2_score": 0.4314
+        },
+        {
+            "model_name": "3. Seasonal Naive 7d (lag_336)",
+            "samples_evaluated": 14416,
+            "MAE_kW": 1884.69,
+            "RMSE_kW": 3125.33,
+            "MAE_MW": 1.8847,
+            "RMSE_MW": 3.1253,
+            "sMAPE_pct": 42.57,
+            "R2_score": 0.1092
+        },
+        {
+            "model_name": "4. Moving Average (1.5h)",
+            "samples_evaluated": 14437,
+            "MAE_kW": 1019.64,
+            "RMSE_kW": 1592.29,
+            "MAE_MW": 1.0196,
+            "RMSE_MW": 1.5923,
+            "sMAPE_pct": 21.82,
+            "R2_score": 0.7686
+        },
+        {
+            "model_name": "5. Ridge Regression",
+            "samples_evaluated": 14440,
+            "MAE_kW": 773.17,
+            "RMSE_kW": 1276.94,
+            "MAE_MW": 0.7732,
+            "RMSE_MW": 1.2769,
+            "sMAPE_pct": 25.58,
+            "R2_score": 0.8512
+        },
+        {
+            "model_name": "6. XGBoost Regressor",
+            "samples_evaluated": 14440,
+            "MAE_kW": 776.46,
+            "RMSE_kW": 1263.55,
+            "MAE_MW": 0.7765,
+            "RMSE_MW": 1.2635,
+            "sMAPE_pct": 25.74,
+            "R2_score": 0.8543,
+            "training_time_sec": 1.97
+        },
+        {
+            "model_name": "7. HistGradientBoosting Regressor",
+            "samples_evaluated": 14440,
+            "MAE_kW": 746.56,
+            "RMSE_kW": 1224.95,
+            "MAE_MW": 0.7466,
+            "RMSE_MW": 1.2249,
+            "sMAPE_pct": 24.65,
+            "R2_score": 0.8631,
+            "training_time_sec": 2.43
+        }
+    ],
+    "classification_benchmark": {
+        "model_name": "XGBoost Classifier (Direction)",
+        "accuracy_pct": 62.38,
+        "report": {
+            "KHÔNG ĐỔI": {
+                "precision": 0.6424176619616359,
+                "recall": 0.47057264050901376,
+                "f1-score": 0.5432287681713849,
+                "support": 3772.0
+            },
+            "TĂNG": {
+                "precision": 0.6035273368606702,
+                "recall": 0.7606134696599244,
+                "f1-score": 0.6730258629167076,
+                "support": 4499.0
+            },
+            "GIẢM": {
+                "precision": 0.6344265024138505,
+                "recall": 0.6177662506078782,
+                "f1-score": 0.6259855453350854,
+                "support": 6169.0
+            },
+            "accuracy": 0.6238227146814405,
+            "macro avg": {
+                "precision": 0.6267905004120521,
+                "recall": 0.6163174535922721,
+                "f1-score": 0.6140800588077261,
+                "support": 14440.0
+            },
+            "weighted avg": {
+                "precision": 0.6268868423023884,
+                "recall": 0.6238227146814405,
+                "f1-score": 0.6190240373945203,
+                "support": 14440.0
+            }
+        }
+    }
+}
