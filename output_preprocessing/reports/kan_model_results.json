@@ -1,0 +1,51 @@
+{
+    "timestamp": "2026-10-16T20:55:41.693493",
+    "architecture": "Residual KAN (y_hat = P_t + KAN_delta) with B-Splines (order=3, grid=5)",
+    "hidden_dims": [
+        64,
+        32
+    ],
+    "input_features": 33,
+    "evaluated_samples": 14385,
+    "metrics": {
+        "model_name": "Residual Kolmogorov-Arnold Network (KAN)",
+        "MAE_kW": 515.63,
+        "RMSE_kW": 1021.59,
+        "MAE_MW": 0.5156,
+        "RMSE_MW": 1.0216,
+        "sMAPE_pct": 18.93,
+        "R2_score": 0.9047,
+        "training_time_sec": 182.17,
+        "samples_evaluated": 14385
+    },
+    "mbb_significance_test": {
+        "block_48_steps_24h": {
+            "delta_rmse_mean_kW": 144.04,
+            "ci_rmse_95_kW": [
+                131.04,
+                157.89
+            ],
+            "rmse_better_pct": 100.0,
+            "delta_mae_mean_kW": 84.67,
+            "ci_mae_95_kW": [
+                76.68,
+                93.04
+            ],
+            "is_significant_at_005": true
+        },
+        "block_336_steps_7d": {
+            "delta_rmse_mean_kW": 143.02,
+            "ci_rmse_95_kW": [
+                124.99,
+                160.71
+            ],
+            "rmse_better_pct": 100.0,
+            "delta_mae_mean_kW": 85.11,
+            "ci_mae_95_kW": [
+                73.88,
+                95.79
+            ],
+            "is_significant_at_005": true
+        }
+    }
+}
