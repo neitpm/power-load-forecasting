@@ -2,11 +2,20 @@
 """
 =============================================================================
 KIỂM ĐỊNH THỐNG KÊ Ý NGHĨA VỚI MOVING-BLOCK BOOTSTRAP (M-BB)
+BẢN CẢI TIẾN: HỖ TRỢ ĐA KHỐI (48 BƯỚC / 24H & 336 BƯỚC / 7 NGÀY)
+VÀ XỬ LÝ CHẶT CHẼ RANH GIỚI CÁC PHÂN ĐOẠN LIÊN TỤC (CONTIGUOUS SEGMENTS)
 =============================================================================
-Tôn trọng cấu trúc tự tương quan chuỗi thời gian (Autocorrelation):
-- Block size = 48 bước (tương đương chu kỳ ngày 24h)
-- Số lần lặp Bootstrap B = 1,000 lần
-- Tính khoảng tin cậy 95% CI cho ΔRMSE và ΔMAE giữa GBDT và Persistence Naive
+Đặc điểm:
+1. Xác định 16 phân đoạn liên tục trong tập đánh giá 14,385 mẫu.
+2. Khi lấy mẫu khối (Block Sampling), chỉ lấy các block nằm trọn trong cùng một
+   phân đoạn liên tục (không lấy block bắc cầu qua khoảng đứt gãy thời gian).
+3. Đánh giá đa quy mô:
+   - Block = 48 bước (1 ngày - chu kỳ phụ tải ngày).
+   - Block = 336 bước (7 ngày - chu kỳ tuần).
+4. Tính toán đầy đủ:
+   - ΔRMSE và ΔMAE
+   - Khoảng tin cậy 95% CI
+   - Tỷ lệ mô hình cây tốt hơn Persistence
 =============================================================================
 """
 
@@ -27,17 +36,40 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.impute import SimpleImputer
+import xgboost as xgb
+from sklearn.ensemble import HistGradientBoostingRegressor
 
 sns.set_theme(style="whitegrid", palette="muted")
 plt.rcParams['font.sans-serif'] = 'DejaVu Sans'
 plt.rcParams['axes.unicode_minus'] = False
 
 
-def moving_block_bootstrap(y_true, y_pred_cand, y_pred_base, block_length=48, n_boot=1000, seed=42):
+def build_contiguous_blocks(segment_ids, block_length):
+    """
+    Xác định tất cả các điểm bắt đầu hợp lệ sao cho toàn bộ block dài block_length
+    nằm trọn trong cùng một phân đoạn thời gian liên tục.
+    """
+    valid_starts = []
+    n = len(segment_ids)
+    for i in range(n - block_length + 1):
+        if segment_ids[i] == segment_ids[i + block_length - 1]:
+            valid_starts.append(i)
+    return np.array(valid_starts)
+
+
+def contiguous_moving_block_bootstrap(
+    y_true, y_pred_cand, y_pred_base, segment_ids,
+    block_length=48, n_boot=1000, seed=42
+):
     np.random.seed(seed)
     n = len(y_true)
+    valid_starts = build_contiguous_blocks(segment_ids, block_length)
+
+    if len(valid_starts) == 0:
+        raise ValueError(f"Không tìm thấy phân đoạn liên tục nào đủ dài {block_length} bước.")
+
     num_blocks = int(np.ceil(n / block_length))
-    max_start = n - block_length + 1
 
     diff_rmse_list = []
     diff_mae_list = []
@@ -48,8 +80,8 @@ def moving_block_bootstrap(y_true, y_pred_cand, y_pred_base, block_length=48, n_
     mae_cand_orig = mean_absolute_error(y_true, y_pred_cand)
 
     for b in range(n_boot):
-        start_indices = np.random.randint(0, max_start, size=num_blocks)
-        boot_indices = np.concatenate([np.arange(idx, idx + block_length) for idx in start_indices])[:n]
+        chosen_starts = np.random.choice(valid_starts, size=num_blocks, replace=True)
+        boot_indices = np.concatenate([np.arange(s, s + block_length) for s in chosen_starts])[:n]
 
         yt = y_true[boot_indices]
         yp_c = y_pred_cand[boot_indices]
@@ -73,6 +105,8 @@ def moving_block_bootstrap(y_true, y_pred_cand, y_pred_base, block_length=48, n_
     ci_mae_low, ci_mae_high = np.percentile(diff_mae_arr, [2.5, 97.5])
 
     return {
+        "block_length": block_length,
+        "valid_blocks_count": len(valid_starts),
         "rmse_base": rmse_base_orig,
         "rmse_cand": rmse_cand_orig,
         "delta_rmse_mean": np.mean(diff_rmse_arr),
@@ -95,13 +129,16 @@ def main():
     figures_dir = base_dir / "figures"
 
     print("=" * 80)
-    print("CHẠY KIỂM ĐỊNH MOVING-BLOCK BOOTSTRAP (BLOCK 48 BƯỚC = 24H)")
+    print("CHẠY KIỂM ĐỊNH CONTIGUOUS MOVING-BLOCK BOOTSTRAP (BLOCK 48 & BLOCK 336)")
     print("=" * 80)
 
-    # 1. Đọc test.csv
+    # 1. Đọc dữ liệu
     test_df = pd.read_csv(data_dir / "test.csv")
     train_df = pd.read_csv(data_dir / "train.csv")
     val_df = pd.read_csv(data_dir / "validation.csv")
+
+    test_df["TIME"] = pd.to_datetime(test_df["TIME"])
+    test_df = test_df.sort_values("TIME").reset_index(drop=True)
 
     candidate_features = [
         "UA", "UB", "UC", "IA", "IB", "IC", "CosF", "P_kW", "Q_kVAr",
@@ -130,14 +167,17 @@ def main():
         np.isfinite(pred_ma3)
     )
 
+    eval_df = test_df[mask_common].copy().reset_index(drop=True)
     y_eval = y_test[mask_common]
     p_eval = pred_persistence[mask_common]
 
-    # Huấn luyện nhanh XGBoost để lấy dự báo
-    from sklearn.impute import SimpleImputer
-    import xgboost as xgb
-    from sklearn.ensemble import HistGradientBoostingRegressor
+    # Tính toán chính xác các phân đoạn thời gian liên tục (Contiguous Segments)
+    diffs = eval_df["TIME"].diff()
+    segment_ids = (diffs != pd.Timedelta(minutes=30)).cumsum().values
+    n_segments = len(np.unique(segment_ids))
+    print(f"-> Tập đánh giá chuẩn: {len(y_eval):,} mẫu, gồm {n_segments} phân đoạn thời gian liên tục.")
 
+    # Huấn luyện XGBoost & HistGBDT
     imputer = SimpleImputer(strategy="median")
     X_train_imp = imputer.fit_transform(train_df[feature_cols])
     y_train = train_df[target_col].values
@@ -145,7 +185,7 @@ def main():
     y_val = val_df[target_col].values
     X_test_imp = imputer.transform(test_df[feature_cols])
 
-    print("Huấn luyện XGBoost...")
+    print("\nHuấn luyện XGBoost Regressor...")
     model_xgb = xgb.XGBRegressor(
         n_estimators=300, learning_rate=0.05, max_depth=6, subsample=0.8,
         colsample_bytree=0.8, random_state=42, n_jobs=-1, early_stopping_rounds=30
@@ -153,81 +193,130 @@ def main():
     model_xgb.fit(X_train_imp, y_train, eval_set=[(X_val_imp, y_val)], verbose=False)
     pred_xgb = model_xgb.predict(X_test_imp)[mask_common]
 
-    print("Huấn luyện HistGradientBoosting...")
+    print("Huấn luyện HistGradientBoosting Regressor...")
     model_hgb = HistGradientBoostingRegressor(
         max_iter=300, learning_rate=0.05, max_depth=6, random_state=42, early_stopping=True
     )
     model_hgb.fit(X_train_imp, y_train)
     pred_hgb = model_hgb.predict(X_test_imp)[mask_common]
 
-    print(f"\nSố mẫu đánh giá chuỗi thời gian liên tục: {len(y_eval):,} mẫu.")
+    # Kiểm định với Block 48 (24h) và Block 336 (7 ngày)
+    configs = [
+        {"name": "24h (48 bước)", "block": 48},
+        {"name": "7 ngày (336 bước)", "block": 336}
+    ]
 
-    # Chạy Moving-Block Bootstrap
-    print("\n--- Moving-Block Bootstrap (XGBoost vs Persistence) ---")
-    res_xgb = moving_block_bootstrap(y_eval, pred_xgb, p_eval, block_length=48, n_boot=1000)
-    print(f"ΔRMSE trung bình (Persistence - XGBoost): {res_xgb['delta_rmse_mean']:+.2f} kW")
-    print(f"95% CI ΔRMSE: [{res_xgb['ci_rmse_95'][0]:.2f}; {res_xgb['ci_rmse_95'][1]:.2f}] kW")
-    print(f"Tỷ lệ XGBoost có RMSE tốt hơn Persistence: {res_xgb['rmse_better_pct']:.1f}%")
-    print(f"ΔMAE trung bình (Persistence - XGBoost): {res_xgb['delta_mae_mean']:+.2f} kW")
-    print(f"95% CI ΔMAE: [{res_xgb['ci_mae_95'][0]:.2f}; {res_xgb['ci_mae_95'][1]:.2f}] kW")
+    all_results = {}
 
-    print("\n--- Moving-Block Bootstrap (HistGBDT vs Persistence) ---")
-    res_hgb = moving_block_bootstrap(y_eval, pred_hgb, p_eval, block_length=48, n_boot=1000)
-    print(f"ΔRMSE trung bình (Persistence - HistGBDT): {res_hgb['delta_rmse_mean']:+.2f} kW")
-    print(f"95% CI ΔRMSE: [{res_hgb['ci_rmse_95'][0]:.2f}; {res_hgb['ci_rmse_95'][1]:.2f}] kW")
-    print(f"Tỷ lệ HistGBDT có RMSE tốt hơn Persistence: {res_hgb['rmse_better_pct']:.1f}%")
+    for cfg in configs:
+        b_len = cfg["block"]
+        b_name = cfg["name"]
+        print(f"\n" + "-" * 70)
+        print(f"TIẾN HÀNH CONTIGUOUS M-BB CHO KHUNG {b_name}...")
+        print("-" * 70)
 
-    # Lưu kết quả
-    mbb_summary = {
-        "method": "Moving-Block Bootstrap (Block=48 steps / 24h, B=1000 iterations)",
-        "evaluated_samples": len(y_eval),
-        "XGBoost_vs_Persistence": {
-            "delta_rmse_mean_kW": round(float(res_xgb['delta_rmse_mean']), 2),
-            "ci_rmse_95_kW": [round(float(x), 2) for x in res_xgb['ci_rmse_95']],
-            "rmse_better_pct": round(float(res_xgb['rmse_better_pct']), 1),
-            "delta_mae_mean_kW": round(float(res_xgb['delta_mae_mean']), 2),
-            "ci_mae_95_kW": [round(float(x), 2) for x in res_xgb['ci_mae_95']],
-            "is_significant_at_005": bool(res_xgb['ci_rmse_95'][0] > 0)
-        },
-        "HistGBDT_vs_Persistence": {
-            "delta_rmse_mean_kW": round(float(res_hgb['delta_rmse_mean']), 2),
-            "ci_rmse_95_kW": [round(float(x), 2) for x in res_hgb['ci_rmse_95']],
-            "rmse_better_pct": round(float(res_hgb['rmse_better_pct']), 1),
-            "delta_mae_mean_kW": round(float(res_hgb['delta_mae_mean']), 2),
-            "ci_mae_95_kW": [round(float(x), 2) for x in res_hgb['ci_mae_95']],
-            "is_significant_at_005": bool(res_hgb['ci_rmse_95'][0] > 0)
+        res_xgb = contiguous_moving_block_bootstrap(
+            y_eval, pred_xgb, p_eval, segment_ids, block_length=b_len, n_boot=1000
+        )
+        res_hgb = contiguous_moving_block_bootstrap(
+            y_eval, pred_hgb, p_eval, segment_ids, block_length=b_len, n_boot=1000
+        )
+
+        print(f"XGBoost vs Persistence (Block {b_len}):")
+        print(f"  ΔRMSE trung bình: {res_xgb['delta_rmse_mean']:+.2f} kW | 95% CI: [{res_xgb['ci_rmse_95'][0]:.2f}; {res_xgb['ci_rmse_95'][1]:.2f}] kW")
+        print(f"  Tỷ lệ thắng RMSE: {res_xgb['rmse_better_pct']:.1f}%")
+        print(f"  ΔMAE trung bình:  {res_xgb['delta_mae_mean']:+.2f} kW | 95% CI: [{res_xgb['ci_mae_95'][0]:.2f}; {res_xgb['ci_mae_95'][1]:.2f}] kW")
+
+        print(f"HistGBDT vs Persistence (Block {b_len}):")
+        print(f"  ΔRMSE trung bình: {res_hgb['delta_rmse_mean']:+.2f} kW | 95% CI: [{res_hgb['ci_rmse_95'][0]:.2f}; {res_hgb['ci_rmse_95'][1]:.2f}] kW")
+        print(f"  Tỷ lệ thắng RMSE: {res_hgb['rmse_better_pct']:.1f}%")
+        print(f"  ΔMAE trung bình:  {res_hgb['delta_mae_mean']:+.2f} kW | 95% CI: [{res_hgb['ci_mae_95'][0]:.2f}; {res_hgb['ci_mae_95'][1]:.2f}] kW")
+
+        all_results[f"block_{b_len}"] = {
+            "block_length_steps": b_len,
+            "block_duration": b_name,
+            "valid_blocks_count": res_xgb["valid_blocks_count"],
+            "XGBoost_vs_Persistence": {
+                "delta_rmse_mean_kW": round(float(res_xgb['delta_rmse_mean']), 2),
+                "ci_rmse_95_kW": [round(float(x), 2) for x in res_xgb['ci_rmse_95']],
+                "rmse_better_pct": round(float(res_xgb['rmse_better_pct']), 1),
+                "delta_mae_mean_kW": round(float(res_xgb['delta_mae_mean']), 2),
+                "ci_mae_95_kW": [round(float(x), 2) for x in res_xgb['ci_mae_95']],
+                "is_significant_at_005": bool(res_xgb['ci_rmse_95'][0] > 0)
+            },
+            "HistGBDT_vs_Persistence": {
+                "delta_rmse_mean_kW": round(float(res_hgb['delta_rmse_mean']), 2),
+                "ci_rmse_95_kW": [round(float(x), 2) for x in res_hgb['ci_rmse_95']],
+                "rmse_better_pct": round(float(res_hgb['rmse_better_pct']), 1),
+                "delta_mae_mean_kW": round(float(res_hgb['delta_mae_mean']), 2),
+                "ci_mae_95_kW": [round(float(x), 2) for x in res_hgb['ci_mae_95']],
+                "is_significant_at_005": bool(res_hgb['ci_rmse_95'][0] > 0)
+            }
         }
+
+    # Lưu JSON báo cáo tổng hợp
+    full_report = {
+        "method": "Contiguous Moving-Block Bootstrap (Zero Cross-Gap Leakage, B=1000)",
+        "evaluated_samples": len(y_eval),
+        "contiguous_segments_count": n_segments,
+        "results": all_results
     }
-
     with open(reports_dir / "moving_block_bootstrap_summary.json", "w", encoding="utf-8") as f:
-        json.dump(mbb_summary, f, indent=4, ensure_ascii=False)
+        json.dump(full_report, f, indent=4, ensure_ascii=False)
 
-    # Vẽ biểu đồ phân phối MBB
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    sns.histplot(res_xgb["diff_rmse_samples"], bins=40, kde=True, ax=axes[0], color="#ff7f0e", alpha=0.6)
-    axes[0].axvline(0, color="black", ls="--", lw=1.5, label="Không chênh lệch (0 kW)")
-    axes[0].axvline(res_xgb['ci_rmse_95'][0], color="red", ls=":", lw=1.5, label=f"2.5%: {res_xgb['ci_rmse_95'][0]:.1f}")
-    axes[0].axvline(res_xgb['ci_rmse_95'][1], color="red", ls=":", lw=1.5, label=f"97.5%: {res_xgb['ci_rmse_95'][1]:.1f}")
-    axes[0].set_title(f"XGBoost vs Persistence (ΔRMSE: {res_xgb['delta_rmse_mean']:+.1f} kW)", fontweight="bold")
-    axes[0].set_xlabel("Chênh lệch RMSE = RMSE(Persistence) - RMSE(XGBoost) [kW]")
-    axes[0].legend()
+    # Vẽ biểu đồ so sánh 2x2: (Block 48 & Block 336) cho XGBoost và HistGBDT
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
-    sns.histplot(res_hgb["diff_rmse_samples"], bins=40, kde=True, ax=axes[1], color="#2ca02c", alpha=0.6)
-    axes[1].axvline(0, color="black", ls="--", lw=1.5, label="Không chênh lệch (0 kW)")
-    axes[1].axvline(res_hgb['ci_rmse_95'][0], color="red", ls=":", lw=1.5, label=f"2.5%: {res_hgb['ci_rmse_95'][0]:.1f}")
-    axes[1].axvline(res_hgb['ci_rmse_95'][1], color="red", ls=":", lw=1.5, label=f"97.5%: {res_hgb['ci_rmse_95'][1]:.1f}")
-    axes[1].set_title(f"HistGBDT vs Persistence (ΔRMSE: {res_hgb['delta_rmse_mean']:+.1f} kW)", fontweight="bold")
-    axes[1].set_xlabel("Chênh lệch RMSE = RMSE(Persistence) - RMSE(HistGBDT) [kW]")
-    axes[1].legend()
+    # Hàng 1: Block 48
+    r48_xgb = contiguous_moving_block_bootstrap(y_eval, pred_xgb, p_eval, segment_ids, block_length=48, n_boot=1000)
+    r48_hgb = contiguous_moving_block_bootstrap(y_eval, pred_hgb, p_eval, segment_ids, block_length=48, n_boot=1000)
 
-    fig.suptitle("13. Phân phối chênh lệch RMSE qua 1,000 lần Moving-Block Bootstrap (Block 48 bước)", fontsize=13, fontweight="bold")
+    sns.histplot(r48_xgb["diff_rmse_samples"], bins=40, kde=True, ax=axes[0, 0], color="#ff7f0e", alpha=0.6)
+    axes[0, 0].axvline(0, color="black", ls="--", lw=1.5, label="Không chênh lệch (0 kW)")
+    axes[0, 0].axvline(r48_xgb['ci_rmse_95'][0], color="red", ls=":", lw=1.5, label=f"2.5%: {r48_xgb['ci_rmse_95'][0]:.1f}")
+    axes[0, 0].axvline(r48_xgb['ci_rmse_95'][1], color="red", ls=":", lw=1.5, label=f"97.5%: {r48_xgb['ci_rmse_95'][1]:.1f}")
+    axes[0, 0].set_title(f"A. XGBoost vs Persistence [Block 48 (24h)]\nΔRMSE: {r48_xgb['delta_rmse_mean']:+.1f} kW | Thắng: {r48_xgb['rmse_better_pct']:.1f}%", fontweight="bold")
+    axes[0, 0].set_xlabel("ΔRMSE (Persistence - XGBoost) [kW]")
+    axes[0, 0].legend()
+
+    sns.histplot(r48_hgb["diff_rmse_samples"], bins=40, kde=True, ax=axes[0, 1], color="#2ca02c", alpha=0.6)
+    axes[0, 1].axvline(0, color="black", ls="--", lw=1.5, label="Không chênh lệch (0 kW)")
+    axes[0, 1].axvline(r48_hgb['ci_rmse_95'][0], color="red", ls=":", lw=1.5, label=f"2.5%: {r48_hgb['ci_rmse_95'][0]:.1f}")
+    axes[0, 1].axvline(r48_hgb['ci_rmse_95'][1], color="red", ls=":", lw=1.5, label=f"97.5%: {r48_hgb['ci_rmse_95'][1]:.1f}")
+    axes[0, 1].set_title(f"B. HistGBDT vs Persistence [Block 48 (24h)]\nΔRMSE: {r48_hgb['delta_rmse_mean']:+.1f} kW | Thắng: {r48_hgb['rmse_better_pct']:.1f}%", fontweight="bold")
+    axes[0, 1].set_xlabel("ΔRMSE (Persistence - HistGBDT) [kW]")
+    axes[0, 1].legend()
+
+    # Hàng 2: Block 336
+    r336_xgb = contiguous_moving_block_bootstrap(y_eval, pred_xgb, p_eval, segment_ids, block_length=336, n_boot=1000)
+    r336_hgb = contiguous_moving_block_bootstrap(y_eval, pred_hgb, p_eval, segment_ids, block_length=336, n_boot=1000)
+
+    sns.histplot(r336_xgb["diff_rmse_samples"], bins=40, kde=True, ax=axes[1, 0], color="#ff7f0e", alpha=0.6)
+    axes[1, 0].axvline(0, color="black", ls="--", lw=1.5, label="Không chênh lệch (0 kW)")
+    axes[1, 0].axvline(r336_xgb['ci_rmse_95'][0], color="red", ls=":", lw=1.5, label=f"2.5%: {r336_xgb['ci_rmse_95'][0]:.1f}")
+    axes[1, 0].axvline(r336_xgb['ci_rmse_95'][1], color="red", ls=":", lw=1.5, label=f"97.5%: {r336_xgb['ci_rmse_95'][1]:.1f}")
+    axes[1, 0].set_title(f"C. XGBoost vs Persistence [Block 336 (7 ngày)]\nΔRMSE: {r336_xgb['delta_rmse_mean']:+.1f} kW | Thắng: {r336_xgb['rmse_better_pct']:.1f}%", fontweight="bold")
+    axes[1, 0].set_xlabel("ΔRMSE (Persistence - XGBoost) [kW]")
+    axes[1, 0].legend()
+
+    sns.histplot(r336_hgb["diff_rmse_samples"], bins=40, kde=True, ax=axes[1, 1], color="#2ca02c", alpha=0.6)
+    axes[1, 1].axvline(0, color="black", ls="--", lw=1.5, label="Không chênh lệch (0 kW)")
+    axes[1, 1].axvline(r336_hgb['ci_rmse_95'][0], color="red", ls=":", lw=1.5, label=f"2.5%: {r336_hgb['ci_rmse_95'][0]:.1f}")
+    axes[1, 1].axvline(r336_hgb['ci_rmse_95'][1], color="red", ls=":", lw=1.5, label=f"97.5%: {r336_hgb['ci_rmse_95'][1]:.1f}")
+    axes[1, 1].set_title(f"D. HistGBDT vs Persistence [Block 336 (7 ngày)]\nΔRMSE: {r336_hgb['delta_rmse_mean']:+.1f} kW | Thắng: {r336_hgb['rmse_better_pct']:.1f}%", fontweight="bold")
+    axes[1, 1].set_xlabel("ΔRMSE (Persistence - HistGBDT) [kW]")
+    axes[1, 1].legend()
+
+    fig.suptitle("13. Kiểm định ý nghĩa thống kê Đa chu kỳ (Block 24h & Block 7 ngày) qua Contiguous Moving-Block Bootstrap", fontsize=13, fontweight="bold")
     fig.tight_layout()
     fig.savefig(figures_dir / "13_moving_block_bootstrap_rmse.png", dpi=200)
     plt.close(fig)
 
-    print("\n✅ Đã hoàn thành Moving-Block Bootstrap và lưu kết quả vào:")
-    print(f"   - {reports_dir / 'moving_block_bootstrap_summary.json'}")
-    print(f"   - {figures_dir / '13_moving_block_bootstrap_rmse.png'}")
+    print("\n" + "=" * 80)
+    print("✅ ĐÃ HOÀN THÀNH TOÀN DIỆN CONTIGUOUS MOVING-BLOCK BOOTSTRAP!")
+    print(f"📊 Báo cáo JSON: {reports_dir / 'moving_block_bootstrap_summary.json'}")
+    print(f"📈 Biểu đồ 2x2: {figures_dir / '13_moving_block_bootstrap_rmse.png'}")
+    print("=" * 80)
 
 
 if __name__ == "__main__":

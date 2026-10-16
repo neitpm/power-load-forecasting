@@ -1,32 +1,73 @@
 {
-    "method": "Moving-Block Bootstrap (Block=48 steps / 24h, B=1000 iterations)",
+    "method": "Contiguous Moving-Block Bootstrap (Zero Cross-Gap Leakage, B=1000)",
     "evaluated_samples": 14385,
-    "XGBoost_vs_Persistence": {
-        "delta_rmse_mean_kW": -9.14,
-        "ci_rmse_95_kW": [
-            -97.58,
-            75.52
-        ],
-        "rmse_better_pct": 44.0,
-        "delta_mae_mean_kW": -59.65,
-        "ci_mae_95_kW": [
-            -115.29,
-            -10.83
-        ],
-        "is_significant_at_005": false
-    },
-    "HistGBDT_vs_Persistence": {
-        "delta_rmse_mean_kW": -0.59,
-        "ci_rmse_95_kW": [
-            -82.99,
-            79.22
-        ],
-        "rmse_better_pct": 52.1,
-        "delta_mae_mean_kW": -56.09,
-        "ci_mae_95_kW": [
-            -109.43,
-            -8.53
-        ],
-        "is_significant_at_005": false
+    "contiguous_segments_count": 16,
+    "results": {
+        "block_48": {
+            "block_length_steps": 48,
+            "block_duration": "24h (48 bước)",
+            "valid_blocks_count": 14012,
+            "XGBoost_vs_Persistence": {
+                "delta_rmse_mean_kW": 10.2,
+                "ci_rmse_95_kW": [
+                    -80.3,
+                    84.04
+                ],
+                "rmse_better_pct": 62.1,
+                "delta_mae_mean_kW": -44.2,
+                "ci_mae_95_kW": [
+                    -97.56,
+                    -2.44
+                ],
+                "is_significant_at_005": false
+            },
+            "HistGBDT_vs_Persistence": {
+                "delta_rmse_mean_kW": 23.85,
+                "ci_rmse_95_kW": [
+                    -58.28,
+                    93.27
+                ],
+                "rmse_better_pct": 74.6,
+                "delta_mae_mean_kW": -39.15,
+                "ci_mae_95_kW": [
+                    -88.56,
+                    1.33
+                ],
+                "is_significant_at_005": false
+            }
+        },
+        "block_336": {
+            "block_length_steps": 336,
+            "block_duration": "7 ngày (336 bước)",
+            "valid_blocks_count": 13315,
+            "XGBoost_vs_Persistence": {
+                "delta_rmse_mean_kW": 20.83,
+                "ci_rmse_95_kW": [
+                    -92.77,
+                    113.92
+                ],
+                "rmse_better_pct": 66.6,
+                "delta_mae_mean_kW": -39.56,
+                "ci_mae_95_kW": [
+                    -101.33,
+                    13.53
+                ],
+                "is_significant_at_005": false
+            },
+            "HistGBDT_vs_Persistence": {
+                "delta_rmse_mean_kW": 32.22,
+                "ci_rmse_95_kW": [
+                    -72.99,
+                    118.98
+                ],
+                "rmse_better_pct": 75.2,
+                "delta_mae_mean_kW": -35.31,
+                "ci_mae_95_kW": [
+                    -95.76,
+                    14.91
+                ],
+                "is_significant_at_005": false
+            }
+        }
     }
 }
