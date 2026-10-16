@@ -1,0 +1,5 @@
+đây là dữ liệu 7 năm của 1 trạm lớn
+và trong 7 file đó có các trạm nhỏ 
+bây giờ cần dự đoán trạm lớn sẽ tăng hay giảm bao nhiêu  và con số dự đoán cụ thể
+biết được là mỗi 30 phút thì trạm lớn sẽ cho kết quả thực tế 1 lần
+bây giờ cần dự đoán trước 30 phút trạm lớn đó sẽ như thế nào
