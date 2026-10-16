@@ -1,0 +1,139 @@
+{
+    "timestamp": "2026-10-16T21:15:21.873191",
+    "seeds_evaluated": [
+        42,
+        101,
+        2024,
+        7,
+        999
+    ],
+    "evaluated_samples": 14385,
+    "summary_statistics": {
+        "MAE_kW_mean": 528.99,
+        "MAE_kW_std": 12.23,
+        "RMSE_kW_mean": 1033.35,
+        "RMSE_kW_std": 13.78,
+        "sMAPE_pct_mean": 19.17,
+        "sMAPE_pct_std": 0.32,
+        "R2_score_mean": 0.9025,
+        "R2_score_std": 0.0026,
+        "Improvement_MAE_pct_mean": 11.59,
+        "Improvement_RMSE_pct_mean": 10.95
+    },
+    "individual_runs": [
+        {
+            "model_name": "Residual KAN (Seed 42)",
+            "MAE_kW": 515.63,
+            "RMSE_kW": 1021.59,
+            "MAE_MW": 0.5156,
+            "RMSE_MW": 1.0216,
+            "sMAPE_pct": 18.93,
+            "R2_score": 0.9047,
+            "seed": 42,
+            "training_time_sec": 178.4,
+            "Delta_MAE_kW": 82.73,
+            "Delta_RMSE_kW": 138.85,
+            "Improvement_MAE_pct": 13.83,
+            "Improvement_RMSE_pct": 11.97
+        },
+        {
+            "model_name": "Residual KAN (Seed 101)",
+            "MAE_kW": 545.37,
+            "RMSE_kW": 1039.31,
+            "MAE_MW": 0.5454,
+            "RMSE_MW": 1.0393,
+            "sMAPE_pct": 19.7,
+            "R2_score": 0.9014,
+            "seed": 101,
+            "training_time_sec": 191.0,
+            "Delta_MAE_kW": 52.99,
+            "Delta_RMSE_kW": 121.13,
+            "Improvement_MAE_pct": 8.86,
+            "Improvement_RMSE_pct": 10.44
+        },
+        {
+            "model_name": "Residual KAN (Seed 2024)",
+            "MAE_kW": 532.16,
+            "RMSE_kW": 1054.85,
+            "MAE_MW": 0.5322,
+            "RMSE_MW": 1.0548,
+            "sMAPE_pct": 19.12,
+            "R2_score": 0.8984,
+            "seed": 2024,
+            "training_time_sec": 192.68,
+            "Delta_MAE_kW": 66.2,
+            "Delta_RMSE_kW": 105.59,
+            "Improvement_MAE_pct": 11.06,
+            "Improvement_RMSE_pct": 9.1
+        },
+        {
+            "model_name": "Residual KAN (Seed 7)",
+            "MAE_kW": 518.07,
+            "RMSE_kW": 1025.05,
+            "MAE_MW": 0.5181,
+            "RMSE_MW": 1.025,
+            "sMAPE_pct": 18.9,
+            "R2_score": 0.904,
+            "seed": 7,
+            "training_time_sec": 188.01,
+            "Delta_MAE_kW": 80.29,
+            "Delta_RMSE_kW": 135.39,
+            "Improvement_MAE_pct": 13.42,
+            "Improvement_RMSE_pct": 11.67
+        },
+        {
+            "model_name": "Residual KAN (Seed 999)",
+            "MAE_kW": 533.72,
+            "RMSE_kW": 1025.97,
+            "MAE_MW": 0.5337,
+            "RMSE_MW": 1.026,
+            "sMAPE_pct": 19.2,
+            "R2_score": 0.9039,
+            "seed": 999,
+            "training_time_sec": 204.38,
+            "Delta_MAE_kW": 64.64,
+            "Delta_RMSE_kW": 134.47,
+            "Improvement_MAE_pct": 10.8,
+            "Improvement_RMSE_pct": 11.59
+        }
+    ],
+    "ensemble_5_seeds": {
+        "metrics": {
+            "model_name": "Residual KAN (5-Seed Ensemble Mean)",
+            "MAE_kW": 519.78,
+            "RMSE_kW": 1019.95,
+            "MAE_MW": 0.5198,
+            "RMSE_MW": 1.0199,
+            "sMAPE_pct": 18.96,
+            "R2_score": 0.905,
+            "Improvement_MAE_pct": 13.13,
+            "Improvement_RMSE_pct": 12.11
+        },
+        "mbb_significance_block_48": {
+            "delta_rmse_mean_kW": 146.05,
+            "ci_rmse_95_kW": [
+                133.16,
+                159.63
+            ],
+            "rmse_better_pct": 100.0,
+            "delta_mae_mean_kW": 80.22,
+            "ci_mae_95_kW": [
+                72.78,
+                87.99
+            ]
+        },
+        "mbb_significance_block_336": {
+            "delta_rmse_mean_kW": 144.61,
+            "ci_rmse_95_kW": [
+                125.18,
+                164.78
+            ],
+            "rmse_better_pct": 100.0,
+            "delta_mae_mean_kW": 80.45,
+            "ci_mae_95_kW": [
+                69.5,
+                91.16
+            ]
+        }
+    }
+}
