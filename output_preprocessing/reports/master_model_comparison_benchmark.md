@@ -10,13 +10,13 @@
 | Baseline / ML Truyền thống | 6. XGBoost Regressor | 645.24 | 1155.21 | 0.6452 | 1.1552 | 23.30% | 0.8781 | -7.83% | +0.45% |
 | Baseline / ML Truyền thống | 7. HistGradientBoosting Regressor | 648.01 | 1153.06 | 0.6480 | 1.1531 | 23.41% | 0.8786 | -8.30% | +0.64% |
 | Thống kê độ ổn định (5 Seed) | 8. Residual KAN đơn lẻ (Mean ± Std qua 5 Seed)* | 528.99 ± 12.23 | 1033.35 ± 13.78 | 0.5290 | 1.0333 | 19.17% ± 0.32% | 0.9025 ± 0.0026 | +11.59% | +10.95% |
-| Mô hình đề xuất (Deep Learning) | 9. Residual KAN Ensemble (Trung bình 5 Seed)** | 519.78 | 1019.95 | 0.5198 | 1.0199 | 18.96% | 0.9050 | +13.13% | +12.11% |
+| Mô hình đề xuất (Deep Learning) | 9. Residual KAN Ensemble (Trung bình đều 5 Seed)** | 519.78 | 1019.95 | 0.5198 | 1.0199 | 18.96% | 0.9050 | +13.13% | +12.11% |
 
 ### Ghi chú phương pháp và phạm vi áp dụng (Dành cho Luận văn Thạc sĩ):
 
 1. **Phạm vi dữ liệu thực nghiệm:**
-   - Tập kiểm thử gồm **14.385 mẫu đo đồng nhất** (bước nhảy 30 phút liên tục không rò rỉ dữ liệu).
-   - Giai đoạn kiểm thử cố định: **01/11/2024 đến 30/08/2025**.
+   - Tập kiểm thử gồm **14.385 mẫu hợp lệ**, được phân thành **16 phân đoạn thời gian liên tục**; quy trình bootstrap kiểm định không vượt qua các khoảng đứt gãy dữ liệu.
+   - Khoảng thời gian kiểm thử chính xác: **02/11/2024 15:30:00 đến 30/08/2025 23:30:00**.
    - Đối tượng kiểm định: **Lộ 480 Trạm biến áp 224 Tân Hưng** (Công ty Điện lực Tây Ninh).
    - *Lưu ý học thuật:* Kết quả phản ánh hiệu năng trên tập kiểm định cụ thể này; việc mở rộng sang các xuất tuyến khác (như trạm Suối Ngô hoặc các năm khác) cần có thực nghiệm tái thẩm định riêng biệt.
 
@@ -26,8 +26,8 @@
    - Giá trị **âm (-)**: Mô hình có sai số lớn hơn Persistence (kém hơn).
 
 3. **Phân biệt hai dòng kết quả KAN:**
-   - `(*)` **Dòng 8 (Mean ± Std):** Thống kê độ ổn định của mô hình đơn qua 5 lần khởi tạo ngẫu nhiên khác nhau (Random Seeds: 42, 101, 2024, 7, 999), thể hiện tính hội tụ vững chắc của mạng.
-   - `(**)` **Dòng 9 (Ensemble):** Một mô hình dự báo kết hợp độc lập bằng cách lấy trung bình đầu ra của 5 mạng, đạt mức sai số thấp nhất trên tập kiểm thử.
+   - `(*)` **Dòng 8 (Mean ± Std):** Thống kê độ ổn định của mô hình đơn qua 5 lần khởi tạo ngẫu nhiên khác nhau (`seeds = [42, 101, 2024, 7, 999]`), thể hiện tính hội tụ vững chắc của mạng.
+   - `(**)` **Dòng 9 (Ensemble):** Mô hình kết hợp bằng **trung bình đều cố định** $(\hat{y}_{\text{ens}} = \frac{1}{5}\sum_{i=1}^5 \hat{y}_i)$, tuyệt đối không tối ưu hóa trọng số trên tập kiểm thử nhằm đảm bảo khách quan (Zero Data Leakage).
 
 4. **Đánh giá toàn diện:**
    - **Residual KAN** đạt ưu thế rõ rệt và vượt trội về **MAE, RMSE và R²**.

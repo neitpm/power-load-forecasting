@@ -4,16 +4,16 @@
 BẢNG TỔNG HỢP SO SÁNH TOÀN DIỆN CÁC MÔ HÌNH DỰ BÁO PHỤ TẢI ĐIỆN 30 PHÚT
 (PHIÊN BẢN CHUẨN MỰC HỌC THUẬT CHO LUẬN VĂN THẠC SĨ)
 =============================================================================
-Đặc điểm hiệu chỉnh học thuật:
-1. Tách bạch rõ ràng 2 cách thể hiện của KAN:
-   - Dòng 8: Đánh giá độ ổn định của mô hình đơn qua 5 seed (Mean ± Std).
-   - Dòng 9: Mô hình kết hợp độc lập (5-Seed Ensemble) - một mô hình dự báo riêng biệt.
-2. Công thức cải thiện (Improvement) được định nghĩa nhất quán:
+Đặc điểm hiệu chỉnh:
+1. Đồng nhất mốc thời gian chính xác theo preprocessing_summary.json:
+   - Tập kiểm thử: 02/11/2024 15:30:00 -> 30/08/2025 23:30:00 (14,440 mẫu, lọc 14,385 mẫu hợp lệ).
+2. Chuẩn hóa diễn đạt tính liên tục:
+   - "14.385 mẫu hợp lệ, được phân thành 16 đoạn thời gian liên tục; bootstrap không vượt qua các khoảng đứt gãy."
+3. Minh bạch phương pháp Ensemble:
+   - Sử dụng Trung bình đều cố định (Uniform Simple Average, trọng số w_i = 1/5 cho cả 5 seeds),
+     hoàn toàn không dùng bất kỳ thông tin nào từ tập test để tối ưu trọng số (Zero Data Leakage).
+4. Công thức cải thiện:
    Improvement (%) = (Metric_Baseline - Metric_Model) / Metric_Baseline * 100%
-   (Giá trị dương: mô hình cải thiện/giảm sai số; Giá trị âm: mô hình kém hơn Persistence).
-3. Ghi rõ phạm vi nghiên cứu và giới hạn thực nghiệm:
-   - Áp dụng trên tập kiểm thử độc lập (14,385 mẫu, 11/2024 -> 08/2025).
-   - Đối tượng kiểm chứng: Lộ 480 Trạm 224 Tân Hưng (Điện lực Tây Ninh).
 =============================================================================
 """
 
@@ -76,10 +76,10 @@ def generate_master_benchmark_table():
         "ΔRMSE vs Persistence (%)": f"+{stats['Improvement_RMSE_pct_mean']:.2f}%"
     })
 
-    # Dòng 9: Mô hình kết hợp độc lập (5-Seed Ensemble)
+    # Dòng 9: Mô hình kết hợp trung bình đều (Uniform Ensemble)
     master_rows.append({
         "Phân nhóm": "Mô hình đề xuất (Deep Learning)",
-        "Mô hình": "9. Residual KAN Ensemble (Trung bình 5 Seed)**",
+        "Mô hình": "9. Residual KAN Ensemble (Trung bình đều 5 Seed)**",
         "MAE (kW)": f"{ens['MAE_kW']:.2f}",
         "RMSE (kW)": f"{ens['RMSE_kW']:.2f}",
         "MAE (MW)": f"{ens['MAE_MW']:.4f}",
@@ -93,7 +93,6 @@ def generate_master_benchmark_table():
     df_master = pd.DataFrame(master_rows)
     df_master.to_csv(reports_dir / "master_model_comparison_benchmark.csv", index=False, encoding="utf-8-sig")
 
-    # Xuất định dạng Markdown chuẩn kèm chú thích học thuật chặt chẽ
     headers = list(df_master.columns)
     lines = [
         "| " + " | ".join(headers) + " |",
@@ -107,8 +106,8 @@ def generate_master_benchmark_table():
 ### Ghi chú phương pháp và phạm vi áp dụng (Dành cho Luận văn Thạc sĩ):
 
 1. **Phạm vi dữ liệu thực nghiệm:**
-   - Tập kiểm thử gồm **14.385 mẫu đo đồng nhất** (bước nhảy 30 phút liên tục không rò rỉ dữ liệu).
-   - Giai đoạn kiểm thử cố định: **01/11/2024 đến 30/08/2025**.
+   - Tập kiểm thử gồm **14.385 mẫu hợp lệ**, được phân thành **16 phân đoạn thời gian liên tục**; quy trình bootstrap kiểm định không vượt qua các khoảng đứt gãy dữ liệu.
+   - Khoảng thời gian kiểm thử chính xác: **02/11/2024 15:30:00 đến 30/08/2025 23:30:00**.
    - Đối tượng kiểm định: **Lộ 480 Trạm biến áp 224 Tân Hưng** (Công ty Điện lực Tây Ninh).
    - *Lưu ý học thuật:* Kết quả phản ánh hiệu năng trên tập kiểm định cụ thể này; việc mở rộng sang các xuất tuyến khác (như trạm Suối Ngô hoặc các năm khác) cần có thực nghiệm tái thẩm định riêng biệt.
 
@@ -118,8 +117,8 @@ def generate_master_benchmark_table():
    - Giá trị **âm (-)**: Mô hình có sai số lớn hơn Persistence (kém hơn).
 
 3. **Phân biệt hai dòng kết quả KAN:**
-   - `(*)` **Dòng 8 (Mean ± Std):** Thống kê độ ổn định của mô hình đơn qua 5 lần khởi tạo ngẫu nhiên khác nhau (Random Seeds: 42, 101, 2024, 7, 999), thể hiện tính hội tụ vững chắc của mạng.
-   - `(**)` **Dòng 9 (Ensemble):** Một mô hình dự báo kết hợp độc lập bằng cách lấy trung bình đầu ra của 5 mạng, đạt mức sai số thấp nhất trên tập kiểm thử.
+   - `(*)` **Dòng 8 (Mean ± Std):** Thống kê độ ổn định của mô hình đơn qua 5 lần khởi tạo ngẫu nhiên khác nhau (`seeds = [42, 101, 2024, 7, 999]`), thể hiện tính hội tụ vững chắc của mạng.
+   - `(**)` **Dòng 9 (Ensemble):** Mô hình kết hợp bằng **trung bình đều cố định** $(\\hat{y}_{\\text{ens}} = \\frac{1}{5}\\sum_{i=1}^5 \\hat{y}_i)$, tuyệt đối không tối ưu hóa trọng số trên tập kiểm thử nhằm đảm bảo khách quan (Zero Data Leakage).
 
 4. **Đánh giá toàn diện:**
    - **Residual KAN** đạt ưu thế rõ rệt và vượt trội về **MAE, RMSE và R²**.
@@ -131,7 +130,7 @@ def generate_master_benchmark_table():
         f.write(md_table)
         f.write("\n\n" + notes.strip() + "\n")
 
-    print("✅ Đã cập nhật bảng tổng hợp chuẩn mực học thuật tại:")
+    print("✅ Đã cập nhật bảng tổng hợp chuẩn mực học thuật hoàn thiện tại:")
     print(f"   - {reports_dir / 'master_model_comparison_benchmark.csv'}")
     print(f"   - {reports_dir / 'master_model_comparison_benchmark.md'}")
 
