@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-PIPELINE TIỀN XỬ LÝ DỮ LIỆU DỰ BÁO PHỤ TẢI ĐIỆN 30 PHÚT (POWER LOAD FORECASTING)
+PIPELINE TIỀN XỬ LÝ DỮ LIỆU DỰ BÁO PHỤ TẢI ĐIỆN 30 PHÚT (BẢN CHUẨN ĐÁNH GIÁ)
 =============================================================================
-Dự án: Nghiên cứu mô hình học sâu dự báo phụ tải điện trạm Điện lực Tây Ninh
-Mục tiêu: Xây dựng pipeline tiền xử lý chuẩn mực, không rò rỉ dữ liệu (No Data Leakage),
-         tự động tạo đặc trưng và xuất tập dữ liệu huấn luyện cho bài toán dự báo 30 phút.
+Cấu trúc lưu trữ đầu ra tách bạch riêng biệt:
+- output_preprocessing/data/    : Chứa dữ liệu sạch (cleaned, featured, supervised, train, val, test)
+- output_preprocessing/reports/ : Chứa báo cáo định lượng (quality_report.csv, station_summary.csv, json)
+- output_preprocessing/figures/ : Chứa TOÀN BỘ 8 biểu đồ đánh giá chất lượng chuẩn báo cáo khoa học (DPI cao)
 =============================================================================
 """
 
@@ -23,10 +24,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Thiết lập hiển thị đồ thị
-sns.set_theme(style="whitegrid")
+# Cấu hình thẩm mỹ cho đồ thị chuẩn báo cáo
+sns.set_theme(style="whitegrid", palette="muted")
 plt.rcParams['font.sans-serif'] = 'DejaVu Sans'
 plt.rcParams['axes.unicode_minus'] = False
+plt.rcParams['figure.titlesize'] = 14
+plt.rcParams['axes.labelsize'] = 11
+plt.rcParams['xtick.labelsize'] = 10
+plt.rcParams['ytick.labelsize'] = 10
 
 NUMERIC_COLS = ["UA", "UB", "UC", "IA", "IB", "IC", "CosF", "P_kW", "Q_kVAr"]
 
@@ -35,25 +40,13 @@ NUMERIC_COLS = ["UA", "UB", "UC", "IA", "IB", "IC", "CosF", "P_kW", "Q_kVAr"]
 # 1. TÌM KIẾM VÀ ĐỌC FILE CSV
 # =============================================================================
 def find_csv_files(data_dir: Path) -> list[Path]:
-    """
-    Quét đệ quy tìm toàn bộ file CSV trong thư mục.
-    Bỏ qua các file nén zip/7z và các file output/báo cáo đã tạo trước đó.
-    """
     if not data_dir.exists():
         raise FileNotFoundError(f"Thư mục không tồn tại: {data_dir}")
 
     all_csvs = sorted(data_dir.rglob("*.csv"))
-    valid_csvs = []
-    
-    # Danh sách các từ khóa cần loại trừ (file kết quả, báo cáo tạm)
     exclude_keywords = ["report", "summary", "cleaned", "featured", "supervised", "train", "validation", "test", "merged_with_features"]
 
-    for p in all_csvs:
-        # Bỏ qua nếu tên file chứa từ khóa loại trừ
-        if any(kw in p.name.lower() for kw in exclude_keywords):
-            continue
-        valid_csvs.append(p)
-
+    valid_csvs = [p for p in all_csvs if not any(kw in p.name.lower() for kw in exclude_keywords)]
     return valid_csvs
 
 
@@ -61,11 +54,6 @@ def find_csv_files(data_dir: Path) -> list[Path]:
 # 2. CHUẨN HÓA THỜI GIAN VÀ CỘT DỮ LIỆU
 # =============================================================================
 def parse_time_robust(df: pd.DataFrame) -> pd.Series:
-    """
-    Hỗ trợ cả 2 trường hợp:
-    - TIME đã chứa ngày giờ đầy đủ (ví dụ: '2024-01-01 00:00:04.000')
-    - Ngày và giờ nằm ở 2 cột riêng (ví dụ: DATE + TIME)
-    """
     time_candidates = ["TIME", "Time", "ThoiGian", "THOIGIAN", "Gio", "GIO"]
     time_col = next((c for c in time_candidates if c in df.columns), None)
     
@@ -73,57 +61,37 @@ def parse_time_robust(df: pd.DataFrame) -> pd.Series:
         raise ValueError(f"Không tìm thấy cột thời gian trong: {df.columns.tolist()}")
 
     s_time = df[time_col].astype(str).str.strip()
-
-    # Thử parse trực tiếp
     parsed = pd.to_datetime(s_time, errors="coerce")
     if parsed.notna().mean() >= 0.8:
         return parsed
 
-    # Trường hợp ngày ở cột riêng
     date_candidates = ["DATE", "Date", "Ngay", "NGAY", "Ngày"]
     date_col = next((c for c in date_candidates if c in df.columns), None)
 
     if date_col:
         s_date = pd.to_datetime(df[date_col], errors="coerce")
-        # Chuẩn hóa chuỗi thời gian nếu dạng mm:ss
         s_time_fixed = s_time.str.replace(r"\s+", "", regex=True)
         s_time_fixed = s_time_fixed.where(s_time_fixed.str.count(":") == 2, "00:" + s_time_fixed)
-        s_delta = pd.to_timedelta(s_time_fixed, errors="coerce")
-        return s_date + s_delta
+        return s_date + pd.to_timedelta(s_time_fixed, errors="coerce")
 
     return parsed
 
 
-# =============================================================================
-# 3. ĐỌC VÀ LÀM SẠCH SƠ BỘ TỪNG FILE
-# =============================================================================
 def load_and_standardize_single_file(file_path: Path) -> pd.DataFrame:
-    """
-    Đọc một file CSV đơn lẻ và chuẩn hóa cơ bản:
-    - Loại bỏ khoảng trắng tên cột
-    - Chuẩn hóa TIME thành Datetime
-    - Chuyển đổi dữ liệu số, dấu phẩy thành dấu chấm
-    """
-    # Thử đọc với encoding utf-8, nếu lỗi đổi sang cp1252 / latin1
     try:
         df = pd.read_csv(file_path, low_memory=False, encoding="utf-8")
     except UnicodeDecodeError:
         df = pd.read_csv(file_path, low_memory=False, encoding="latin1")
 
-    # Xóa khoảng trắng tên cột
     df.columns = [str(c).strip() for c in df.columns]
-
-    # Chuẩn hóa TIME
     df["TIME"] = parse_time_robust(df)
     df = df.dropna(subset=["TIME"]).copy()
 
-    # Chuẩn hóa cột số
-    present_num_cols = [c for c in NUMERIC_COLS if c in df.columns]
-    for c in present_num_cols:
-        s = df[c].astype(str).str.strip().str.replace(",", ".", regex=False)
-        df[c] = pd.to_numeric(s, errors="coerce")
+    for c in NUMERIC_COLS:
+        if c in df.columns:
+            s = df[c].astype(str).str.strip().str.replace(",", ".", regex=False)
+            df[c] = pd.to_numeric(s, errors="coerce")
 
-    # Chuẩn hóa MaDiemDo và TenDiemDo
     if "MaDiemDo" in df.columns:
         df["MaDiemDo"] = pd.to_numeric(df["MaDiemDo"], errors="coerce")
         df = df.dropna(subset=["MaDiemDo"]).copy()
@@ -137,40 +105,28 @@ def load_and_standardize_single_file(file_path: Path) -> pd.DataFrame:
 
 
 # =============================================================================
-# 4. KIỂM TRA CHẤT LƯỢNG DỮ LIỆU (DATA QUALITY CHECK)
+# 3. BÁO CÁO CHẤT LƯỢNG DỮ LIỆU
 # =============================================================================
-def audit_data_quality(df: pd.DataFrame, output_dir: Path) -> dict:
-    """
-    Kiểm tra toàn diện chất lượng dữ liệu và xuất báo cáo quality_report.csv
-    """
+def audit_data_quality(df: pd.DataFrame, reports_dir: Path) -> dict:
     total_rows = len(df)
     unique_points = df["MaDiemDo"].nunique() if "MaDiemDo" in df.columns else 0
     t_min = df["TIME"].min()
     t_max = df["TIME"].max()
 
-    # 1. Bản ghi trùng lặp
     dup_keys = ["TIME", "MaDiemDo"] if "MaDiemDo" in df.columns else ["TIME"]
     num_duplicates = int(df.duplicated(subset=dup_keys).sum())
 
-    # 2. Tỷ lệ thiếu từng cột
     missing_stats = df.isna().sum()
     missing_pct = (missing_stats / total_rows * 100).round(2)
 
-    # 3. Kiểm tra mốc lệch chu kỳ 30 phút
-    # Mốc chuẩn 30 phút có minute % 30 == 0 và second == 0
     is_aligned_30m = (df["TIME"].dt.minute % 30 == 0) & (df["TIME"].dt.second == 0)
     misaligned_count = int((~is_aligned_30m).sum())
 
-    # 4. Phát hiện bất thường vật lý
     outliers = {}
     if "P_kW" in df.columns:
         outliers["P_kW_negative"] = int((df["P_kW"] < 0).sum())
         outliers["P_kW_excessive"] = int((df["P_kW"] > 30000).sum())
-    if "UA" in df.columns:
-        outliers["UA_negative"] = int((df["UA"] < 0).sum())
-        outliers["UA_excessive"] = int((df["UA"] > 35000).sum())
 
-    # Tạo DataFrame báo cáo chất lượng
     report_data = []
     for col in df.columns:
         report_data.append({
@@ -181,9 +137,9 @@ def audit_data_quality(df: pd.DataFrame, output_dir: Path) -> dict:
             "unique_values": int(df[col].nunique())
         })
     df_report = pd.DataFrame(report_data)
-    df_report.to_csv(output_dir / "quality_report.csv", index=False, encoding="utf-8-sig")
+    df_report.to_csv(reports_dir / "quality_report.csv", index=False, encoding="utf-8-sig")
 
-    quality_summary = {
+    return {
         "total_rows": total_rows,
         "unique_points": unique_points,
         "time_min": str(t_min),
@@ -193,40 +149,23 @@ def audit_data_quality(df: pd.DataFrame, output_dir: Path) -> dict:
         "outliers": outliers
     }
 
-    return quality_summary
-
 
 # =============================================================================
-# 5. LÀM TRÒN VÀ TẠO LƯỚI THỜI GIAN 30 PHÚT CHUẨN XÁC
+# 4. TẠO LƯỚI THỜI GIAN 30 PHÚT VÀ NỘI SUY CÓ KIỂM SOÁT
 # =============================================================================
 def resample_and_impute_30m_grid(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Quy chuẩn dữ liệu về lưới 30 phút đều đặn cho từng MaDiemDo:
-    - Làm tròn TIME về mốc 30 phút gần nhất.
-    - Reindex đầy đủ từ t_min đến t_max theo chu kỳ 30 phút.
-    - Chỉ nội suy tuyến tính các khoảng khuyết ngắn (tối đa 2 bước = 1 tiếng).
-    - Giữ nguyên NaN cho các khoảng khuyết dài hơn.
-    - Đánh dấu cột is_imputed = 1 cho các giá trị được nội suy.
-    """
-    # 1. Làm tròn mốc thời gian về mốc 30 phút gần nhất (00:00, 00:30, ...)
     df["TIME_30m"] = df["TIME"].dt.round("30min")
-
-    # 2. Loại bỏ trùng lặp sau khi làm tròn (giữ bản ghi đầu tiên)
     df_sorted = df.sort_values(by=["MaDiemDo", "TIME_30m", "TIME"]).reset_index(drop=True)
     df_dedup = df_sorted.drop_duplicates(subset=["MaDiemDo", "TIME_30m"], keep="first").copy()
 
-    # Nhóm theo từng điểm đo để xử lý độc lập (tránh Data Leakage)
     resampled_list = []
-
     for point_id, group in df_dedup.groupby("MaDiemDo"):
         group = group.set_index("TIME_30m").sort_index()
 
-        # Tạo lưới thời gian 30 phút liên tục từ start đến end của điểm đo này
         t_start = group.index.min()
         t_end = group.index.max()
         full_timeline = pd.date_range(start=t_start, end=t_end, freq="30min", name="TIME")
 
-        # Lưu lại bản gốc để kiểm tra ô nào bị thiếu trước khi nội suy
         group_reindexed = group.reindex(full_timeline)
         group_reindexed["MaDiemDo"] = point_id
         if "TenDiemDo" in group.columns:
@@ -234,185 +173,117 @@ def resample_and_impute_30m_grid(df: pd.DataFrame) -> pd.DataFrame:
         if "MBA" in group.columns:
             group_reindexed["MBA"] = group["MBA"].dropna().iloc[0] if len(group["MBA"].dropna()) > 0 else "Unknown"
 
-        # Đánh dấu dữ liệu thiếu trước khi nội suy
         was_missing = group_reindexed["P_kW"].isna()
-
-        # Áp dụng nội suy tuyến tính có kiểm soát (giới hạn tối đa 2 bước = 1 giờ)
         present_nums = [c for c in NUMERIC_COLS if c in group_reindexed.columns]
-        imputed_vals = group_reindexed[present_nums].interpolate(method="time", limit=2, limit_direction="forward")
 
-        # Cột is_imputed: True nếu ban đầu bị thiếu và sau nội suy có giá trị
+        # Chỉ nội suy tối đa 2 bước liên tiếp (1 tiếng)
+        imputed_vals = group_reindexed[present_nums].interpolate(method="time", limit=2, limit_direction="forward")
         is_imputed = was_missing & imputed_vals["P_kW"].notna()
         group_reindexed[present_nums] = imputed_vals
         group_reindexed["is_imputed"] = is_imputed.astype(int)
 
-        group_reindexed = group_reindexed.reset_index().rename(columns={"index": "TIME"})
-        resampled_list.append(group_reindexed)
+        resampled_list.append(group_reindexed.reset_index().rename(columns={"index": "TIME"}))
 
-    df_cleaned_long = pd.concat(resampled_list, ignore_index=True)
-    return df_cleaned_long
+    return pd.concat(resampled_list, ignore_index=True)
 
 
 # =============================================================================
-# 6. TẠO ĐẶC TRƯNG VẬT LÝ & CHUỖI THỜI GIAN (FEATURE ENGINEERING)
+# 5. TRÍCH XUẤT ĐẶC TRƯNG (FEATURE ENGINEERING)
 # =============================================================================
 def engineer_features(df_long: pd.DataFrame) -> pd.DataFrame:
-    """
-    Sinh các đặc trưng:
-    - U_avg, I_avg, U_max, U_min, I_max, I_min
-    - S_kVA, độ mất cân bằng pha
-    - Đặc trưng lịch (hour, dayofweek, dayofmonth, month, is_weekend)
-    - Lags & Rolling thống kê (không rò rỉ dữ liệu tương lai)
-    """
     df = df_long.copy()
     eps = 1e-6
 
-    # 1. Đặc trưng điện 3 pha
-    u_cols = [c for c in ["UA", "UB", "UC"] if c in df.columns]
-    if len(u_cols) == 3:
-        df["U_avg"] = df[u_cols].mean(axis=1)
-        df["U_max"] = df[u_cols].max(axis=1)
-        df["U_min"] = df[u_cols].min(axis=1)
+    # 3 pha
+    if set(["UA", "UB", "UC"]).issubset(df.columns):
+        df["U_avg"] = df[["UA", "UB", "UC"]].mean(axis=1)
+        df["U_max"] = df[["UA", "UB", "UC"]].max(axis=1)
+        df["U_min"] = df[["UA", "UB", "UC"]].min(axis=1)
         df["U_unbalance_pct"] = (df["U_max"] - df["U_min"]) / (df["U_avg"].abs() + eps) * 100
 
-    i_cols = [c for c in ["IA", "IB", "IC"] if c in df.columns]
-    if len(i_cols) == 3:
-        df["I_avg"] = df[i_cols].mean(axis=1)
-        df["I_max"] = df[i_cols].max(axis=1)
-        df["I_min"] = df[i_cols].min(axis=1)
+    if set(["IA", "IB", "IC"]).issubset(df.columns):
+        df["I_avg"] = df[["IA", "IB", "IC"]].mean(axis=1)
+        df["I_max"] = df[["IA", "IB", "IC"]].max(axis=1)
+        df["I_min"] = df[["IA", "IB", "IC"]].min(axis=1)
         df["I_unbalance_pct"] = (df["I_max"] - df["I_min"]) / (df["I_avg"].abs() + eps) * 100
 
-    # Công suất biểu kiến S (kVA) = sqrt(P^2 + Q^2)
     if "P_kW" in df.columns and "Q_kVAr" in df.columns:
         df["S_kVA"] = np.sqrt(df["P_kW"].fillna(0)**2 + df["Q_kVAr"].fillna(0)**2)
 
-    # 2. Đặc trưng thời gian
     df["hour"] = df["TIME"].dt.hour + df["TIME"].dt.minute / 60.0
-    df["dayofweek"] = df["TIME"].dt.dayofweek  # 0 = Thứ 2, 6 = Chủ Nhật
+    df["dayofweek"] = df["TIME"].dt.dayofweek
     df["dayofmonth"] = df["TIME"].dt.day
     df["month"] = df["TIME"].dt.month
     df["is_weekend"] = (df["dayofweek"] >= 5).astype(int)
-
-    # Mã hóa chu kỳ lượng giác (Cyclical encoding)
     df["sin_hour"] = np.sin(2 * np.pi * df["hour"] / 24.0)
     df["cos_hour"] = np.cos(2 * np.pi * df["hour"] / 24.0)
 
-    # 3. Đặc trưng trễ (Lags) và Thống kê trượt (Rolling) theo từng MaDiemDo
-    featured_list = []
-    for point_id, group in df.groupby("MaDiemDo"):
-        group = group.sort_values("TIME").copy()
-
-        # Lags: 1 (30p trước), 2 (1h trước), 3 (1.5h trước), 48 (24h trước), 336 (7 ngày trước)
+    # Lags & Rolling không rò rỉ dữ liệu (shift 1)
+    feat_groups = []
+    for point_id, grp in df.groupby("MaDiemDo"):
+        grp = grp.sort_values("TIME").copy()
         for lag in [1, 2, 3, 48, 336]:
-            group[f"lag_{lag}"] = group["P_kW"].shift(lag)
+            grp[f"lag_{lag}"] = grp["P_kW"].shift(lag)
+        p_prev = grp["P_kW"].shift(1)
+        grp["rolling_mean_3"] = p_prev.rolling(3, min_periods=1).mean()
+        grp["rolling_mean_6"] = p_prev.rolling(6, min_periods=1).mean()
+        grp["rolling_mean_48"] = p_prev.rolling(48, min_periods=1).mean()
+        feat_groups.append(grp)
 
-        # Rolling statistics: Phải shift(1) trước khi rolling để đảm bảo KHÔNG rò rỉ dữ liệu tương lai
-        p_shifted = group["P_kW"].shift(1)
-        group["rolling_mean_3"] = p_shifted.rolling(window=3, min_periods=1).mean()
-        group["rolling_mean_6"] = p_shifted.rolling(window=6, min_periods=1).mean()
-        group["rolling_mean_48"] = p_shifted.rolling(window=48, min_periods=1).mean()
-
-        featured_list.append(group)
-
-    df_featured = pd.concat(featured_list, ignore_index=True)
-    return df_featured
+    return pd.concat(feat_groups, ignore_index=True)
 
 
 # =============================================================================
-# 7. XÁC ĐỊNH TRẠM LỚN VÀ THỐNG KÊ (STATION SUMMARY)
+# 6. TỔNG HỢP DANH SÁCH TRẠM
 # =============================================================================
-def generate_station_summary(df_clean: pd.DataFrame, output_dir: Path) -> pd.DataFrame:
-    """
-    Tổng hợp danh sách các điểm đo: Tên, Số dòng, P_kW trung bình, cực đại, tỷ lệ thiếu.
-    Xuất ra station_summary.csv giúp người dùng chọn đúng trạm lớn.
-    """
+def generate_station_summary(df_clean: pd.DataFrame, reports_dir: Path) -> pd.DataFrame:
     summary = []
-    for point_id, group in df_clean.groupby("MaDiemDo"):
-        name = group["TenDiemDo"].iloc[0] if "TenDiemDo" in group.columns else f"Point_{point_id}"
-        count = len(group)
-        p_mean = group["P_kW"].mean()
-        p_max = group["P_kW"].max()
-        missing_rate = group["P_kW"].isna().mean() * 100
+    for pid, grp in df_clean.groupby("MaDiemDo"):
+        name = grp["TenDiemDo"].iloc[0] if "TenDiemDo" in grp.columns else f"Point_{pid}"
+        p_mean = grp["P_kW"].mean()
+        p_max = grp["P_kW"].max()
+        missing_rate = grp["P_kW"].isna().mean() * 100
 
         summary.append({
-            "MaDiemDo": point_id,
+            "MaDiemDo": pid,
             "TenDiemDo": name,
-            "total_records": count,
+            "total_records": len(grp),
             "P_mean_kW": round(float(p_mean), 3) if pd.notna(p_mean) else None,
             "P_max_kW": round(float(p_max), 3) if pd.notna(p_max) else None,
             "missing_rate_pct": round(float(missing_rate), 2)
         })
 
     df_summary = pd.DataFrame(summary).sort_values(by="P_mean_kW", ascending=False).reset_index(drop=True)
-    df_summary.to_csv(output_dir / "station_summary.csv", index=False, encoding="utf-8-sig")
+    df_summary.to_csv(reports_dir / "station_summary.csv", index=False, encoding="utf-8-sig")
     return df_summary
 
 
 # =============================================================================
-# 8. THIẾT LẬP BÀI TOÁN HỌC CÓ GIÁM SÁT (SUPERVISED LEARNING)
+# 7. TẠO TẬP DỮ LIỆU CÓ GIÁM SÁT & CHIA TẬP TRAIN / VAL / TEST
 # =============================================================================
-def build_supervised_dataset(df_featured: pd.DataFrame, target_point: int = None, threshold_kw: float = 0.5) -> pd.DataFrame:
-    """
-    Tạo biến mục tiêu dự báo sau 30 phút:
-    - target_P_kW = P_kW.shift(-1) (giá trị thực tế ở mốc thời gian tiếp theo)
-    - target_delta_P = target_P_kW - P_kW (mức tăng/giảm định lượng)
-    - target_direction: TĂNG / GIẢM / KHÔNG ĐỔI
-    """
-    df = df_featured.copy()
+def build_supervised_and_split(df_featured: pd.DataFrame, target_point: int, threshold_kw: float = 0.5):
+    df_target = df_featured[df_featured["MaDiemDo"] == target_point].sort_values("TIME").copy()
 
-    # Nếu người dùng chỉ định điểm đo trạm lớn, lọc theo điểm đó
-    if target_point is not None:
-        df = df[df["MaDiemDo"] == target_point].copy()
+    # Nhãn mục tiêu P[t+1]
+    df_target["target_P_kW"] = df_target["P_kW"].shift(-1)
+    df_supervised = df_target.dropna(subset=["target_P_kW"]).copy()
 
-    supervised_list = []
-    for point_id, group in df.groupby("MaDiemDo"):
-        group = group.sort_values("TIME").copy()
+    # Độ lệch và nhãn xu hướng
+    df_supervised["target_delta_P"] = df_supervised["target_P_kW"] - df_supervised["P_kW"]
+    conditions = [
+        df_supervised["target_delta_P"] > threshold_kw,
+        df_supervised["target_delta_P"] < -threshold_kw
+    ]
+    df_supervised["target_direction"] = np.select(conditions, ["TĂNG", "GIẢM"], default="KHÔNG ĐỔI")
 
-        # Dịch chuyển ngược 1 bước để lấy giá trị sau 30 phút
-        group["target_P_kW"] = group["P_kW"].shift(-1)
+    # Chia thời gian: Train 70%, Val 15%, Test 15%
+    n = len(df_supervised)
+    train_idx = int(n * 0.70)
+    val_idx = int(n * 0.85)
 
-        # Loại bỏ các dòng không có target (dòng cuối cùng hoặc điểm bị gián đoạn)
-        group = group.dropna(subset=["target_P_kW"]).copy()
-
-        # Tính độ lệch tăng/giảm định lượng
-        group["target_delta_P"] = group["target_P_kW"] - group["P_kW"]
-
-        # Phân loại xu hướng
-        conditions = [
-            group["target_delta_P"] > threshold_kw,
-            group["target_delta_P"] < -threshold_kw
-        ]
-        choices = ["TĂNG", "GIẢM"]
-        group["target_direction"] = np.select(conditions, choices, default="KHÔNG ĐỔI")
-
-        supervised_list.append(group)
-
-    if not supervised_list:
-        return pd.DataFrame()
-
-    df_supervised = pd.concat(supervised_list, ignore_index=True)
-    return df_supervised
-
-
-# =============================================================================
-# 9. PHÂN CHIA TẬP DỮ LIỆU THEO THỜI GIAN (TIME-SERIES SPLIT)
-# =============================================================================
-def time_series_split(df_supervised: pd.DataFrame, train_ratio=0.70, val_ratio=0.15):
-    """
-    Phân chia tuần tự theo thời gian:
-    - Train: 70%
-    - Validation: 15%
-    - Test: 15%
-    """
-    df_sorted = df_supervised.sort_values("TIME").reset_index(drop=True)
-    n = len(df_sorted)
-
-    train_end = int(n * train_ratio)
-    val_end = int(n * (train_ratio + val_ratio))
-
-    train_df = df_sorted.iloc[:train_end].copy()
-    val_df = df_sorted.iloc[train_end:val_end].copy()
-    test_df = df_sorted.iloc[val_end:].copy()
+    train_df = df_supervised.iloc[:train_idx].copy()
+    val_df = df_supervised.iloc[train_idx:val_idx].copy()
+    test_df = df_supervised.iloc[val_idx:].copy()
 
     split_info = {
         "train_rows": len(train_df),
@@ -426,111 +297,173 @@ def time_series_split(df_supervised: pd.DataFrame, train_ratio=0.70, val_ratio=0
         "test_end": str(test_df["TIME"].max()),
     }
 
-    return train_df, val_df, test_df, split_info
+    return df_supervised, train_df, val_df, test_df, split_info
 
 
 # =============================================================================
-# 10. VẼ 6 BIỂU ĐỒ KIỂM TRA CHẤT LƯỢNG (VALIDATION CHARTS)
+# 8. BỘ 8 BIỂU ĐỒ ĐÁNH GIÁ CHẤT LƯỢNG ĐÀNG HOÀNG (FIGURES CHUYÊN BIỆT)
 # =============================================================================
-def generate_all_plots(df_raw: pd.DataFrame, df_clean: pd.DataFrame, output_dir: Path):
+def generate_evaluation_figures(df_raw: pd.DataFrame, df_clean: pd.DataFrame, df_supervised: pd.DataFrame, target_point: int, figures_dir: Path):
     """
-    Vẽ đầy đủ 6 biểu đồ yêu cầu:
-    1. Công suất theo thời gian
-    2. Tỷ lệ thiếu dữ liệu
-    3. Phân phối P_kW
-    4. So sánh dữ liệu gốc và sau khi nội suy
-    5. Phụ tải trung bình theo giờ trong ngày
-    6. Phụ tải trung bình theo ngày trong tuần
+    Sinh 8 biểu đồ đánh giá chuẩn bài báo khoa học, phân giải cao (200 DPI).
+    Lưu riêng vào thư mục figures/.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    sample_point = df_clean["MaDiemDo"].iloc[0]
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    clean_target = df_clean[df_clean["MaDiemDo"] == target_point].set_index("TIME").sort_index()
+    raw_target = df_raw[df_raw["MaDiemDo"] == target_point].set_index("TIME").sort_index()
 
-    # --- 1. Công suất theo thời gian ---
-    fig, ax = plt.subplots(figsize=(15, 6))
-    sub = df_clean[df_clean["MaDiemDo"] == sample_point].set_index("TIME")
-    # Lấy mẫu 1 tháng đầu để nhìn rõ nét
-    sample_sub = sub.iloc[:1440]  # 1440 mốc = 30 ngày
-    ax.plot(sample_sub.index, sample_sub["P_kW"], color="tab:blue", lw=1.2, label=f"Điểm đo {sample_point}")
-    ax.set_title("1. Chuỗi công suất P_kW theo thời gian (Mẫu 30 ngày)", fontsize=14, fontweight="bold")
-    ax.set_xlabel("Thời gian")
-    ax.set_ylabel("Công suất P (kW)")
-    ax.legend()
-    fig.savefig(output_dir / "01_power_over_time.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    # --- ĐỒ THỊ 1: Chuỗi công suất & Phục hồi dữ liệu nội suy (Timeline & Imputation Check) ---
+    fig1, (ax1a, ax1b) = plt.subplots(2, 1, figsize=(16, 9), sharex=False)
+    # Toàn cảnh 1 tháng
+    sample_month = clean_target.iloc[:1440]
+    ax1a.plot(sample_month.index, sample_month["P_kW"], color="#1f77b4", lw=1.2, label=f"Trạm {target_point} (30 ngày)")
+    ax1a.set_title("1A. Toàn cảnh chuỗi phụ tải P (kW) sau làm sạch (Khung 30 ngày)", fontsize=13, fontweight="bold")
+    ax1a.set_ylabel("Công suất P (kW)")
+    ax1a.legend(loc="upper right")
 
-    # --- 2. Tỷ lệ thiếu dữ liệu ---
-    fig, ax = plt.subplots(figsize=(10, 5))
-    missing_pct = (df_raw[NUMERIC_COLS].isna().mean() * 100).sort_values(ascending=False)
-    sns.barplot(x=missing_pct.values, y=missing_pct.index, ax=ax, palette="Blues_r")
-    ax.set_title("2. Tỷ lệ thiếu dữ liệu của các biến số (%)", fontsize=14, fontweight="bold")
-    ax.set_xlabel("Tỷ lệ thiếu (%)")
-    for i, v in enumerate(missing_pct.values):
-        ax.text(v + 0.3, i, f"{v:.2f}%", va="center", fontsize=10)
-    fig.savefig(output_dir / "02_missing_rate.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    # Zoom cận cảnh 7 ngày: Đối chiếu Gốc vs Sau nội suy
+    t0 = clean_target.index.min()
+    t1 = t0 + pd.Timedelta(days=7)
+    r_slice = raw_target.loc[t0:t1]
+    c_slice = clean_target.loc[t0:t1]
+    ax1b.plot(r_slice.index, r_slice["P_kW"], "r.", markersize=8, alpha=0.6, label="Dữ liệu gốc (Bị thiếu / Lệch giây)")
+    ax1b.plot(c_slice.index, c_slice["P_kW"], color="#2ca02c", lw=1.5, alpha=0.9, label="Đã quy chuẩn lưới 30m & Nội suy ngắn (<=2 bước)")
+    ax1b.set_title("1B. Kiểm chứng phục hồi dữ liệu: So sánh Gốc vs Sau xử lý (Zoom 7 ngày)", fontsize=13, fontweight="bold")
+    ax1b.set_ylabel("Công suất P (kW)")
+    ax1b.legend(loc="upper right")
+    fig1.tight_layout()
+    fig1.savefig(figures_dir / "01_load_timeline_and_imputation.png", dpi=200)
+    plt.close(fig1)
 
-    # --- 3. Phân phối P_kW ---
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    p_clean = df_clean["P_kW"].dropna()
-    sns.histplot(p_clean, bins=50, kde=True, ax=axes[0], color="tab:green")
-    axes[0].set_title("Phân phối tần suất P_kW", fontsize=12, fontweight="bold")
-    axes[0].set_xlabel("P (kW)")
+    # --- ĐỒ THỊ 2: Tỷ lệ thiếu dữ liệu & Mức độ hoàn thiện ---
+    fig2, ax2 = plt.subplots(figsize=(11, 5))
+    missing_pct = (df_raw[NUMERIC_COLS].isna().mean() * 100).sort_values(ascending=True)
+    bars = ax2.barh(missing_pct.index, missing_pct.values, color=sns.color_palette("Blues_r", len(missing_pct)))
+    ax2.set_title("2. Đánh giá tỷ lệ khuyết dữ liệu gốc theo từng biến số (%)", fontsize=14, fontweight="bold")
+    ax2.set_xlabel("Tỷ lệ thiếu (%)")
+    for bar in bars:
+        w = bar.get_width()
+        ax2.text(w + 0.3, bar.get_y() + bar.get_height()/2, f"{w:.2f}%", va="center", fontsize=10, fontweight="bold")
+    fig2.tight_layout()
+    fig2.savefig(figures_dir / "02_data_completeness_missing_matrix.png", dpi=200)
+    plt.close(fig2)
 
-    sns.boxplot(y=p_clean, ax=axes[1], color="lightgreen")
-    axes[1].set_title("Boxplot công suất P_kW", fontsize=12, fontweight="bold")
-    fig.suptitle("3. Phân phối và khoảng biến thiên của công suất P_kW", fontsize=14, fontweight="bold")
-    fig.savefig(output_dir / "03_power_distribution.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    # --- ĐỒ THỊ 3: Phân phối công suất P_kW & Kiểm định loại trừ ngoại lai ---
+    fig3, axes3 = plt.subplots(1, 2, figsize=(15, 6))
+    p_data = clean_target["P_kW"].dropna()
+    sns.histplot(p_data, bins=60, kde=True, ax=axes3[0], color="#1f77b4", edgecolor="black", alpha=0.6)
+    axes3[0].axvline(p_data.mean(), color="red", linestyle="--", lw=2, label=f"Mean = {p_data.mean():.2f} kW")
+    axes3[0].axvline(p_data.median(), color="green", linestyle="-.", lw=2, label=f"Median = {p_data.median():.2f} kW")
+    axes3[0].set_title("Phân phối xác suất (Histogram & KDE) của P_kW", fontsize=13, fontweight="bold")
+    axes3[0].set_xlabel("Công suất P (kW)")
+    axes3[0].legend()
 
-    # --- 4. So sánh dữ liệu gốc và sau khi nội suy ---
-    fig, ax = plt.subplots(figsize=(15, 6))
-    raw_sub = df_raw[df_raw["MaDiemDo"] == sample_point].set_index("TIME").sort_index()
-    clean_sub = df_clean[df_clean["MaDiemDo"] == sample_point].set_index("TIME").sort_index()
+    sns.boxplot(y=p_data, ax=axes3[1], color="#98df8a", flierprops={"marker": "x", "markersize": 3, "alpha": 0.5})
+    axes3[1].set_title("Biểu đồ Boxplot: Khoảng tứ phân vị & Ngoại lai", fontsize=13, fontweight="bold")
+    axes3[1].set_ylabel("Công suất P (kW)")
+    fig3.suptitle("3. Kiểm định phân phối và giới hạn ngoại lai công suất P_kW", fontsize=15, fontweight="bold")
+    fig3.tight_layout()
+    fig3.savefig(figures_dir / "03_power_distribution_and_anomaly.png", dpi=200)
+    plt.close(fig3)
 
-    # Mẫu 1 tuần
-    t_start = clean_sub.index.min()
-    t_end = t_start + pd.Timedelta(days=7)
+    # --- ĐỒ THỊ 4: Biểu đồ nhiệt tương quan giữa các đặc trưng (Correlation Heatmap) ---
+    fig4, ax4 = plt.subplots(figsize=(11, 8))
+    corr_cols = [c for c in ["P_kW", "target_P_kW", "lag_1", "lag_2", "lag_48", "rolling_mean_3", "U_avg", "I_avg", "S_kVA", "CosF"] if c in df_supervised.columns]
+    corr_mat = df_supervised[corr_cols].corr()
+    sns.heatmap(corr_mat, annot=True, fmt=".2f", cmap="vlag", ax=ax4, cbar_kws={"label": "Hệ số tương quan Pearson"})
+    ax4.set_title("4. Ma trận tương quan đặc trưng với biến mục tiêu (target_P_kW)", fontsize=14, fontweight="bold")
+    fig4.tight_layout()
+    fig4.savefig(figures_dir / "04_correlation_heatmap_features.png", dpi=200)
+    plt.close(fig4)
 
-    r_slice = raw_sub.loc[t_start:t_end]
-    c_slice = clean_sub.loc[t_start:t_end]
+    # --- ĐỒ THỊ 5: Đánh giá biến mục tiêu (Độ biến thiên Delta_P & Cân bằng nhãn xu hướng) ---
+    fig5, axes5 = plt.subplots(1, 2, figsize=(15, 6))
+    delta_p = df_supervised["target_delta_P"].dropna()
+    sns.histplot(delta_p, bins=70, kde=True, ax=axes5[0], color="#9467bd", edgecolor="black")
+    axes5[0].axvline(0, color="red", linestyle="--", lw=1.5)
+    axes5[0].set_title("Phân phối mức biến thiên Delta P = P[t+1] - P[t] (kW)", fontsize=13, fontweight="bold")
+    axes5[0].set_xlabel("Delta P (kW)")
 
-    ax.plot(r_slice.index, r_slice["P_kW"], "r.", markersize=7, alpha=0.6, label="Dữ liệu gốc (Thô / Khuyết)")
-    ax.plot(c_slice.index, c_slice["P_kW"], "b-", lw=1.2, alpha=0.8, label="Dữ liệu sau khi làm sạch & nội suy")
-    ax.set_title("4. Đối chiếu dữ liệu gốc và sau khi nội suy (Khung thời gian 7 ngày)", fontsize=14, fontweight="bold")
-    ax.set_xlabel("Thời gian")
-    ax.set_ylabel("P (kW)")
-    ax.legend()
-    fig.savefig(output_dir / "04_imputation_comparison.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    dir_counts = df_supervised["target_direction"].value_counts()
+    colors = {"TĂNG": "#2ca02c", "GIẢM": "#d62728", "KHÔNG ĐỔI": "#7f7f7f"}
+    bar_colors = [colors.get(x, "#1f77b4") for x in dir_counts.index]
+    bars5 = axes5[1].bar(dir_counts.index, dir_counts.values, color=bar_colors, edgecolor="black")
+    axes5[1].set_title("Tỷ lệ nhãn xu hướng (TĂNG / GIẢM / KHÔNG ĐỔI)", fontsize=13, fontweight="bold")
+    axes5[1].set_ylabel("Số lượng mẫu")
+    total_samples = len(df_supervised)
+    for b in bars5:
+        h = b.get_height()
+        pct = (h / total_samples) * 100
+        axes5[1].text(b.get_x() + b.get_width()/2, h + total_samples*0.01, f"{h:,}\n({pct:.1f}%)", ha="center", fontsize=10, fontweight="bold")
+    fig5.suptitle("5. Kiểm định biến mục tiêu dự báo (Target Verification)", fontsize=15, fontweight="bold")
+    fig5.tight_layout()
+    fig5.savefig(figures_dir / "05_target_evaluation_and_direction.png", dpi=200)
+    plt.close(fig5)
 
-    # --- 5. Phụ tải trung bình theo giờ trong ngày ---
-    fig, ax = plt.subplots(figsize=(12, 5))
-    df_clean["hour_int"] = df_clean["TIME"].dt.hour
-    avg_hour = df_clean.groupby("hour_int")["P_kW"].mean()
-    ax.plot(avg_hour.index, avg_hour.values, marker="o", color="tab:orange", lw=2)
-    ax.set_title("5. Đường cong phụ tải trung bình theo 24 giờ trong ngày", fontsize=14, fontweight="bold")
-    ax.set_xlabel("Giờ trong ngày (0 - 23)")
-    ax.set_ylabel("Công suất P_kW trung bình")
-    ax.set_xticks(range(0, 24))
-    ax.grid(True, linestyle="--", alpha=0.7)
-    fig.savefig(output_dir / "05_avg_load_by_hour.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    # --- ĐỒ THỊ 6: Scatter Plot P[t] vs P[t+1] (Hồi quy trực quan) ---
+    fig6, ax6 = plt.subplots(figsize=(8, 8))
+    # Lấy mẫu ngẫu nhiên 3,000 điểm để scatter hiển thị thanh thoát
+    sample_scatter = df_supervised.sample(n=min(3000, len(df_supervised)), random_state=42)
+    ax6.scatter(sample_scatter["P_kW"], sample_scatter["target_P_kW"], alpha=0.3, color="#1f77b4", edgecolors="none", s=25)
+    min_val = min(sample_scatter["P_kW"].min(), sample_scatter["target_P_kW"].min())
+    max_val = max(sample_scatter["P_kW"].max(), sample_scatter["target_P_kW"].max())
+    ax6.plot([min_val, max_val], [min_val, max_val], "r--", lw=2, label="Đường lý tưởng (y = x)")
+    r_val = df_supervised[["P_kW", "target_P_kW"]].corr().iloc[0, 1]
+    ax6.set_title(f"6. Tương quan tuyến tính P[t] vs P[t+1] (Pearson r = {r_val:.4f})", fontsize=14, fontweight="bold")
+    ax6.set_xlabel("Công suất thời điểm hiện tại P[t] (kW)")
+    ax6.set_ylabel("Công suất sau 30 phút P[t+1] (kW)")
+    ax6.legend(loc="upper left")
+    fig6.tight_layout()
+    fig6.savefig(figures_dir / "06_scatter_lag_vs_target.png", dpi=200)
+    plt.close(fig6)
 
-    # --- 6. Phụ tải trung bình theo ngày trong tuần ---
-    fig, ax = plt.subplots(figsize=(10, 5))
-    weekday_names = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
-    df_clean["dow"] = df_clean["TIME"].dt.dayofweek
-    avg_dow = df_clean.groupby("dow")["P_kW"].mean()
-    sns.barplot(x=[weekday_names[i] for i in avg_dow.index], y=avg_dow.values, ax=ax, palette="Purples_d")
-    ax.set_title("6. Phụ tải trung bình theo ngày trong tuần", fontsize=14, fontweight="bold")
-    ax.set_xlabel("Ngày trong tuần")
-    ax.set_ylabel("Công suất P_kW trung bình")
-    fig.savefig(output_dir / "06_avg_load_by_weekday.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    # --- ĐỒ THỊ 7: Tính quy luật mùa vụ theo Giờ & Ngày trong tuần (Seasonality Profile) ---
+    fig7, axes7 = plt.subplots(1, 2, figsize=(16, 6))
+    clean_target_feat = df_clean[df_clean["MaDiemDo"] == target_point].copy()
+    clean_target_feat["hour"] = clean_target_feat["TIME"].dt.hour
+    clean_target_feat["dow"] = clean_target_feat["TIME"].dt.dayofweek
+
+    hourly_mean = clean_target_feat.groupby("hour")["P_kW"].mean()
+    hourly_std = clean_target_feat.groupby("hour")["P_kW"].std()
+    axes7[0].plot(hourly_mean.index, hourly_mean.values, marker="o", color="#ff7f0e", lw=2.5, label="Trung bình")
+    axes7[0].fill_between(hourly_mean.index, hourly_mean.values - hourly_std.values, hourly_mean.values + hourly_std.values, color="#ff7f0e", alpha=0.2, label="±1 Std Dev")
+    axes7[0].set_title("Phụ tải trung bình theo 24 giờ trong ngày (Hourly Profile)", fontsize=13, fontweight="bold")
+    axes7[0].set_xlabel("Giờ trong ngày (0 - 23)")
+    axes7[0].set_ylabel("P_kW trung bình")
+    axes7[0].set_xticks(range(0, 24))
+    axes7[0].legend()
+
+    dow_names = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
+    dow_mean = clean_target_feat.groupby("dow")["P_kW"].mean()
+    axes7[1].bar([dow_names[i] for i in dow_mean.index], dow_mean.values, color=sns.color_palette("Set2", 7), edgecolor="black")
+    axes7[1].set_title("Phụ tải trung bình theo ngày trong tuần (Weekly Profile)", fontsize=13, fontweight="bold")
+    axes7[1].set_ylabel("P_kW trung bình")
+    fig7.suptitle("7. Kiểm định tính mùa vụ phụ tải điện (Seasonality Evaluation)", fontsize=15, fontweight="bold")
+    fig7.tight_layout()
+    fig7.savefig(figures_dir / "07_daily_and_weekly_seasonality.png", dpi=200)
+    plt.close(fig7)
+
+    # --- ĐỒ THỊ 8: Trục thời gian phân chia tập dữ liệu (Train - Validation - Test) ---
+    fig8, ax8 = plt.subplots(figsize=(15, 4))
+    n = len(df_supervised)
+    t_idx = int(n * 0.70)
+    v_idx = int(n * 0.85)
+
+    df_sup_sorted = df_supervised.sort_values("TIME").reset_index(drop=True)
+    ax8.plot(df_sup_sorted.iloc[:t_idx]["TIME"], df_sup_sorted.iloc[:t_idx]["P_kW"], color="#1f77b4", label="Train (70%)", lw=1)
+    ax8.plot(df_sup_sorted.iloc[t_idx:v_idx]["TIME"], df_sup_sorted.iloc[t_idx:v_idx]["P_kW"], color="#ff7f0e", label="Validation (15%)", lw=1)
+    ax8.plot(df_sup_sorted.iloc[v_idx:]["TIME"], df_sup_sorted.iloc[v_idx:]["P_kW"], color="#2ca02c", label="Test (15%)", lw=1)
+    ax8.set_title("8. Phân chia tập dữ liệu tuần tự theo trục thời gian (Không rò rỉ dữ liệu)", fontsize=14, fontweight="bold")
+    ax8.set_xlabel("Thời gian")
+    ax8.set_ylabel("P (kW)")
+    ax8.legend(loc="upper right")
+    fig8.tight_layout()
+    fig8.savefig(figures_dir / "08_data_split_timeline.png", dpi=200)
+    plt.close(fig8)
 
 
 # =============================================================================
-# HÀM THỰC THI PIPELINE CHÍNH (MAIN PIPELINE)
+# HÀM THỰC THI PIPELINE VỚI CẤU TRÚC THƯ MỤC TÁCH BẠCH
 # =============================================================================
 def run_pipeline(
     data_dir_str: str,
@@ -538,130 +471,100 @@ def run_pipeline(
     target_point: int = None,
     threshold_kw: float = 0.5
 ):
+    base_out = Path(output_dir_str)
+    data_out = base_out / "data"
+    reports_out = base_out / "reports"
+    figures_out = base_out / "figures"
+
+    # Tạo các thư mục riêng biệt
+    for d in [data_out, reports_out, figures_out]:
+        d.mkdir(parents=True, exist_ok=True)
+
     data_dir = Path(data_dir_str)
-    output_dir = Path(output_dir_str)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    print("=" * 70)
-    print("BẮT ĐẦU PIPELINE TIỀN XỬ LÝ DỮ LIỆU DỰ BÁO PHỤ TẢI ĐIỆN 30 PHÚT")
-    print(f"Thư mục dữ liệu: {data_dir.resolve()}")
-    print(f"Thư mục xuất kết quả: {output_dir.resolve()}")
-    print("=" * 70)
+    print("=" * 75)
+    print("PIPELINE TIỀN XỬ LÝ PHỤ TẢI ĐIỆN 30 PHÚT - CẤU TRÚC ĐẦU RA TÁCH BẠCH")
+    print(f"📁 Dữ liệu đầu vào:      {data_dir.resolve()}")
+    print(f"💾 Thư mục dữ liệu sạch: {data_out.resolve()}")
+    print(f"📑 Thư mục báo cáo CSV:  {reports_out.resolve()}")
+    print(f"📊 Thư mục biểu đồ (DPI cao): {figures_out.resolve()}")
+    print("=" * 75)
 
-    # 1. Tìm các file CSV hợp lệ
+    # 1. Quét CSV
     csv_files = find_csv_files(data_dir)
-    print(f"\n[Bước 1/10] Đã tìm thấy {len(csv_files)} file CSV đo đếm hợp lệ.")
-    if not csv_files:
-        raise SystemExit("Không tìm thấy file CSV nào để xử lý!")
+    print(f"\n[1/6] Tìm thấy {len(csv_files)} file CSV hợp lệ. Đang đọc...")
+    dfs = [load_and_standardize_single_file(f) for f in csv_files]
+    df_raw = pd.concat(dfs, ignore_index=True)
+    print(f"      -> Tổng số dòng dữ liệu thô: {len(df_raw):,}")
 
-    # 2 & 3. Đọc và chuẩn hóa dữ liệu số
-    print("\n[Bước 2 & 3/10] Đang đọc, hợp nhất và chuẩn hóa kiểu dữ liệu...")
-    dfs = []
-    for f in csv_files:
-        try:
-            df_item = load_and_standardize_single_file(f)
-            dfs.append(df_item)
-        except Exception as e:
-            print(f"  - Cảnh báo: Lỗi đọc file {f.name}: {e}")
+    # 2. Kiểm tra chất lượng -> lưu vào reports/
+    print("\n[2/6] Xuất báo cáo chất lượng: reports/quality_report.csv...")
+    audit_summary = audit_data_quality(df_raw, reports_out)
 
-    df_raw_merged = pd.concat(dfs, ignore_index=True)
-    print(f"  -> Tổng số dòng dữ liệu thô đọc được: {len(df_raw_merged):,}")
+    # 3. Làm sạch, lưới 30m, xuất cleaned_long & cleaned_wide -> data/
+    print("\n[3/6] Đồng bộ lưới thời gian 30 phút, lưu vào data/cleaned_long.csv & cleaned_wide.csv...")
+    df_clean_long = resample_and_impute_30m_grid(df_raw)
+    df_clean_long.to_csv(data_out / "cleaned_long.csv", index=False, encoding="utf-8-sig")
 
-    # 4. Kiểm tra chất lượng dữ liệu
-    print("\n[Bước 4/10] Kiểm tra chất lượng dữ liệu và xuất quality_report.csv...")
-    audit_summary = audit_data_quality(df_raw_merged, output_dir)
-    print(f"  -> Số điểm đo: {audit_summary['unique_points']}")
-    print(f"  -> Khoảng thời gian: {audit_summary['time_min']} đến {audit_summary['time_max']}")
-    print(f"  -> Số dòng trùng lặp: {audit_summary['duplicate_rows']}")
-
-    # 5 & 6. Tạo lưới thời gian 30 phút và nội suy kiểm soát
-    print("\n[Bước 5 & 6/10] Đưa về lưới 30 phút chuẩn và thực hiện nội suy có kiểm soát...")
-    df_cleaned_long = resample_and_impute_30m_grid(df_raw_merged)
-    df_cleaned_long.to_csv(output_dir / "cleaned_long.csv", index=False, encoding="utf-8-sig")
-    print(f"  -> Đã lưu: cleaned_long.csv ({len(df_cleaned_long):,} dòng)")
-
-    # Pivot sang Bảng ngang (cleaned_wide.csv)
-    print("  -> Đang chuyển đổi sang định dạng bảng ngang (cleaned_wide.csv)...")
-    df_wide = df_cleaned_long.pivot_table(
-        index="TIME",
-        columns="MaDiemDo",
-        values=["P_kW", "Q_kVAr"],
-        aggfunc="first"
-    )
+    df_wide = df_clean_long.pivot_table(index="TIME", columns="MaDiemDo", values=["P_kW", "Q_kVAr"], aggfunc="first")
     df_wide.columns = [f"{var}_{pt}" for (var, pt) in df_wide.columns]
-    df_wide = df_wide.reset_index()
-    df_wide.to_csv(output_dir / "cleaned_wide.csv", index=False, encoding="utf-8-sig")
-    print(f"  -> Đã lưu: cleaned_wide.csv")
+    df_wide.reset_index().to_csv(data_out / "cleaned_wide.csv", index=False, encoding="utf-8-sig")
 
-    # 7. Tạo đặc trưng (Feature Engineering)
-    print("\n[Bước 7/10] Trích xuất đặc trưng vật lý 3 pha, chu kỳ lịch, Lags và Rolling...")
-    df_featured = engineer_features(df_cleaned_long)
-    df_featured.to_csv(output_dir / "featured_data.csv", index=False, encoding="utf-8-sig")
-    print(f"  -> Đã lưu: featured_data.csv")
+    # 4. Trích xuất đặc trưng & Chọn trạm lớn
+    print("\n[4/6] Trích xuất đặc trưng vật lý & chuỗi thời gian, lưu data/featured_data.csv...")
+    df_featured = engineer_features(df_clean_long)
+    df_featured.to_csv(data_out / "featured_data.csv", index=False, encoding="utf-8-sig")
 
-    # 8. Xác định trạm lớn (Station Summary)
-    print("\n[Bước 8/10] Tổng hợp danh sách trạm và xuất station_summary.csv...")
-    df_station_summary = generate_station_summary(df_cleaned_long, output_dir)
-    print("  -> Danh sách các điểm đo tiêu biểu:")
-    print(df_station_summary.to_string(index=False))
-
-    # Tự động chọn trạm lớn nếu chưa chỉ định (chọn điểm có P_mean lớn nhất)
+    df_station_summary = generate_station_summary(df_clean_long, reports_out)
     if target_point is None:
         target_point = int(df_station_summary.iloc[0]["MaDiemDo"])
-        print(f"  -> Tự động chọn trạm mục tiêu lớn nhất: MaDiemDo = {target_point} ({df_station_summary.iloc[0]['TenDiemDo']})")
+    print(f"      -> Trạm mục tiêu chính: MaDiemDo = {target_point} ({df_station_summary.iloc[0]['TenDiemDo']})")
 
-    # 9. Tạo tập học có giám sát (Supervised Data)
-    print(f"\n[Bước 9/10] Tạo biến mục tiêu dự báo sau 30 phút cho trạm {target_point}...")
-    df_supervised = build_supervised_dataset(df_featured, target_point=target_point, threshold_kw=threshold_kw)
-    df_supervised.to_csv(output_dir / "supervised_data.csv", index=False, encoding="utf-8-sig")
-    print(f"  -> Đã lưu: supervised_data.csv ({len(df_supervised):,} mẫu)")
+    # 5. Tạo dữ liệu có giám sát & Chia tập -> data/
+    print("\n[5/6] Tạo biến mục tiêu sau 30 phút, chia Train (70%) - Val (15%) - Test (15%)...")
+    df_supervised, train_df, val_df, test_df, split_info = build_supervised_and_split(df_featured, target_point, threshold_kw)
+    df_supervised.to_csv(data_out / "supervised_data.csv", index=False, encoding="utf-8-sig")
+    train_df.to_csv(data_out / "train.csv", index=False, encoding="utf-8-sig")
+    val_df.to_csv(data_out / "validation.csv", index=False, encoding="utf-8-sig")
+    test_df.to_csv(data_out / "test.csv", index=False, encoding="utf-8-sig")
+    print(f"      -> Train: {len(train_df):,} | Val: {len(val_df):,} | Test: {len(test_df):,}")
 
-    # 10. Chia dữ liệu theo thời gian (Train 70% / Val 15% / Test 15%)
-    print("\n[Bước 10/10] Chia dữ liệu tuần tự theo thời gian...")
-    train_df, val_df, test_df, split_info = time_series_split(df_supervised, train_ratio=0.70, val_ratio=0.15)
-    train_df.to_csv(output_dir / "train.csv", index=False, encoding="utf-8-sig")
-    val_df.to_csv(output_dir / "validation.csv", index=False, encoding="utf-8-sig")
-    test_df.to_csv(output_dir / "test.csv", index=False, encoding="utf-8-sig")
-    print(f"  -> Train set:      {split_info['train_rows']:,} dòng ({split_info['train_start']} -> {split_info['train_end']})")
-    print(f"  -> Validation set: {split_info['val_rows']:,} dòng ({split_info['val_start']} -> {split_info['val_end']})")
-    print(f"  -> Test set:       {split_info['test_rows']:,} dòng ({split_info['test_start']} -> {split_info['test_end']})")
+    # 6. Vẽ bộ 8 biểu đồ đánh giá chuẩn bài báo khoa học -> figures/
+    print("\n[6/6] Tự động sinh bộ 8 biểu đồ đánh giá chất lượng cao vào figures/...")
+    generate_evaluation_figures(df_raw, df_clean_long, df_supervised, target_point, figures_out)
+    print("      -> Đã xuất đủ 8 biểu đồ đánh giá chuẩn báo cáo khoa học (DPI 200).")
 
-    # Vẽ 6 biểu đồ kiểm tra
-    print("\n[Đồ thị] Tự động sinh 6 biểu đồ kiểm tra chất lượng dữ liệu...")
-    generate_all_plots(df_raw_merged, df_cleaned_long, output_dir)
-    print(f"  -> Đã lưu toàn bộ biểu đồ vào thư mục: {output_dir.resolve()}")
-
-    # Xuất file JSON tổng kết
+    # Lưu metadata tổng kết vào reports/
     summary_final = {
         "timestamp": datetime.now().isoformat(),
         "total_files_read": len(csv_files),
-        "raw_rows": len(df_raw_merged),
-        "cleaned_rows": len(df_cleaned_long),
-        "unique_points": int(df_cleaned_long["MaDiemDo"].nunique()),
+        "raw_rows": len(df_raw),
+        "clean_rows": len(df_clean_long),
         "selected_target_point": target_point,
         "split_info": split_info,
-        "missing_rate_before_pct": round(float(df_raw_merged["P_kW"].isna().mean() * 100), 2),
-        "missing_rate_after_pct": round(float(df_cleaned_long["P_kW"].isna().mean() * 100), 2),
+        "paths": {
+            "clean_data_dir": str(data_out.resolve()),
+            "reports_dir": str(reports_out.resolve()),
+            "figures_dir": str(figures_out.resolve())
+        }
     }
-
-    with open(output_dir / "preprocessing_summary.json", "w", encoding="utf-8") as f:
+    with open(reports_out / "preprocessing_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary_final, f, indent=4, ensure_ascii=False)
 
-    print("\n" + "=" * 70)
-    print("HOÀN THÀNH PIPELINE TIỀN XỬ LÝ THÀNH CÔNG!")
-    print("=" * 70)
+    print("\n" + "=" * 75)
+    print("✅ TOÀN BỘ DỮ LIỆU SẠCH, BÁO CÁO VÀ BIỂU ĐỒ ĐÃ ĐƯỢC LƯU RIÊNG BIỆT THÀNH CÔNG!")
+    print("=" * 75)
     return summary_final
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Pipeline tiền xử lý dữ liệu phụ tải điện 30 phút")
-    parser.add_argument("--data_dir", type=str, default=None, help="Đường dẫn thư mục chứa dữ liệu")
-    parser.add_argument("--output_dir", type=str, default="output_preprocessing", help="Thư mục xuất kết quả")
-    parser.add_argument("--target_point", type=int, default=None, help="Mã điểm đo trạm lớn cần dự báo")
-    parser.add_argument("--threshold_kw", type=float, default=0.5, help="Ngưỡng biến thiên kW để phân loại TĂNG/GIẢM")
+    parser = argparse.ArgumentParser(description="Pipeline tiền xử lý phụ tải điện 30 phút")
+    parser.add_argument("--data_dir", type=str, default=None)
+    parser.add_argument("--output_dir", type=str, default="output_preprocessing")
+    parser.add_argument("--target_point", type=int, default=None)
+    parser.add_argument("--threshold_kw", type=float, default=0.5)
     args = parser.parse_args()
 
-    # Tự động nhận diện đường dẫn (Colab vs Local)
     if args.data_dir:
         input_path = args.data_dir
     elif Path("/content/drive/MyDrive/Tam_TLU/datasets").exists():
