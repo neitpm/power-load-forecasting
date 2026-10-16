@@ -1,5 +1,5 @@
 {
-    "timestamp": "2026-10-16T16:34:26.678894",
+    "timestamp": "2026-10-16T16:46:17.577765",
     "test_samples": 14440,
     "regression_benchmarks": [
         {
@@ -45,69 +45,69 @@
         {
             "model_name": "5. Ridge Regression",
             "samples_evaluated": 14440,
-            "MAE_kW": 773.17,
-            "RMSE_kW": 1276.94,
-            "MAE_MW": 0.7732,
-            "RMSE_MW": 1.2769,
-            "sMAPE_pct": 25.58,
-            "R2_score": 0.8512
+            "MAE_kW": 736.79,
+            "RMSE_kW": 1200.62,
+            "MAE_MW": 0.7368,
+            "RMSE_MW": 1.2006,
+            "sMAPE_pct": 24.83,
+            "R2_score": 0.8685
         },
         {
             "model_name": "6. XGBoost Regressor",
             "samples_evaluated": 14440,
-            "MAE_kW": 776.46,
-            "RMSE_kW": 1263.55,
-            "MAE_MW": 0.7765,
-            "RMSE_MW": 1.2635,
-            "sMAPE_pct": 25.74,
-            "R2_score": 0.8543,
-            "training_time_sec": 1.97
+            "MAE_kW": 650.52,
+            "RMSE_kW": 1167.9,
+            "MAE_MW": 0.6505,
+            "RMSE_MW": 1.1679,
+            "sMAPE_pct": 23.4,
+            "R2_score": 0.8755,
+            "training_time_sec": 4.78
         },
         {
             "model_name": "7. HistGradientBoosting Regressor",
             "samples_evaluated": 14440,
-            "MAE_kW": 746.56,
-            "RMSE_kW": 1224.95,
-            "MAE_MW": 0.7466,
-            "RMSE_MW": 1.2249,
-            "sMAPE_pct": 24.65,
-            "R2_score": 0.8631,
-            "training_time_sec": 2.43
+            "MAE_kW": 653.3,
+            "RMSE_kW": 1165.15,
+            "MAE_MW": 0.6533,
+            "RMSE_MW": 1.1651,
+            "sMAPE_pct": 23.51,
+            "R2_score": 0.8761,
+            "training_time_sec": 4.63
         }
     ],
     "classification_benchmark": {
         "model_name": "XGBoost Classifier (Direction)",
-        "accuracy_pct": 62.38,
+        "accuracy_pct": 61.86,
         "report": {
             "KHÔNG ĐỔI": {
-                "precision": 0.6424176619616359,
-                "recall": 0.47057264050901376,
-                "f1-score": 0.5432287681713849,
+                "precision": 0.6360968451944241,
+                "recall": 0.45970307529162246,
+                "f1-score": 0.5337026777469991,
                 "support": 3772.0
             },
             "TĂNG": {
-                "precision": 0.6035273368606702,
-                "recall": 0.7606134696599244,
-                "f1-score": 0.6730258629167076,
+                "precision": 0.5956741671027386,
+                "recall": 0.7590575683485219,
+                "f1-score": 0.6675136825645035,
                 "support": 4499.0
             },
             "GIẢM": {
-                "precision": 0.6344265024138505,
-                "recall": 0.6177662506078782,
-                "f1-score": 0.6259855453350854,
+                "precision": 0.6325029259321183,
+                "recall": 0.61322742745988,
+                "f1-score": 0.6227160493827161,
                 "support": 6169.0
             },
-            "accuracy": 0.6238227146814405,
+            "accuracy": 0.6185595567867036,
             "macro avg": {
-                "precision": 0.6267905004120521,
-                "recall": 0.6163174535922721,
-                "f1-score": 0.6140800588077261,
+                "precision": 0.6214246460764269,
+                "recall": 0.6106626903666749,
+                "f1-score": 0.6079774698980729,
                 "support": 14440.0
             },
             "weighted avg": {
-                "precision": 0.6268868423023884,
-                "recall": 0.6238227146814405,
-                "f1-score": 0.6190240373945203,
+                "precision": 0.6219671695251958,
+                "recall": 0.6185595567867036,
+                "f1-score": 0.6134214589308419,
                 "support": 14440.0
             }
         }

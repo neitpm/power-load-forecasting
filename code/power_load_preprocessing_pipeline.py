@@ -43,7 +43,11 @@ plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['figure.titlesize'] = 14
 plt.rcParams['axes.labelsize'] = 11
 
-NUMERIC_COLS = ["UA", "UB", "UC", "IA", "IB", "IC", "CosF", "P_kW", "Q_kVAr", "P_MW", "Q_MVAr"]
+NUMERIC_COLS = [
+    "UA", "UB", "UC", "IA", "IB", "IC", "CosF",
+    "P_kW", "Q_kVAr", "P_MW", "Q_MVAr",
+    "P_MW_raw", "P_kW_raw", "Q_MVAr_raw", "Q_kVAr_raw"
+]
 MIN_VALID_DATE = pd.to_datetime("2020-01-01 00:00:00")
 MAX_VALID_DATE = pd.to_datetime("2025-08-31 23:59:59")
 
@@ -133,15 +137,30 @@ def load_and_standardize_single_file(file_path: Path) -> pd.DataFrame:
         if c in df.columns:
             df[c] = clean_single_numeric_series(df[c])
 
-    # CHUẨN HÓA ĐƠN VỊ VẬT LÝ CHÍNH XÁC:
-    # Giá trị trong cột gốc 'P_kW' thực chất là Megawatt (MW) (ví dụ: 9.3408 MW ~ 9,340.8 kW).
-    # Giá trị trong cột gốc 'Q_kVAr' thực chất là MVAr (ví dụ: 1.156 MVAr ~ 1,156.0 kVAr).
-    # Chuẩn hóa tạo cả 2 biến để báo cáo và mô hình không bị nhầm lẫn bậc độ lớn:
+    # CHUẨN HÓA ĐƠN VỊ VẬT LÝ VÀ PHÂN ĐỊNH NGOẠI LAI (PHYSICAL CONTROL):
+    # - Lưu trữ nguyên bản giá trị thô: P_MW_raw, P_kW_raw
+    # - Đánh dấu P_outlier = 1 nếu công suất vượt ngưỡng kiểm soát dữ liệu (20 MW)
+    #   hoặc không tương thích với điện áp và dòng điện đo được đồng thời
+    # - Giá trị bất thường chuyển sang NaN để xử lý bằng nội suy có kiểm soát (<= 2 bước).
     if "P_kW" in df.columns:
-        df["P_MW"] = df["P_kW"].copy()
+        df["P_MW_raw"] = df["P_kW"].copy()
+        df["P_kW_raw"] = df["P_MW_raw"] * 1000.0
+
+        # Kiểm tra ngưỡng kiểm soát dữ liệu 20 MW (trung bình lộ chỉ 8 MW, trần tải dòng <= 12 MW)
+        is_outlier = df["P_MW_raw"] > 20.0
+        df["P_outlier"] = is_outlier.astype(int)
+
+        # Chuyển P_MW và P_kW của bản ghi ngoại lai thành NaN để nội suy an toàn (hoặc loại bỏ nếu kéo dài)
+        df["P_MW"] = df["P_MW_raw"].where(~is_outlier, np.nan)
         df["P_kW"] = df["P_MW"] * 1000.0
+    else:
+        df["P_outlier"] = 0
+
     if "Q_kVAr" in df.columns:
-        df["Q_MVAr"] = df["Q_kVAr"].copy()
+        df["Q_MVAr_raw"] = df["Q_kVAr"].copy()
+        df["Q_kVAr_raw"] = df["Q_MVAr_raw"] * 1000.0
+        # Nếu P bị đánh dấu ngoại lai, Q cũng chuyển sang NaN
+        df["Q_MVAr"] = df["Q_MVAr_raw"].where(~df["P_outlier"].astype(bool), np.nan)
         df["Q_kVAr"] = df["Q_MVAr"] * 1000.0
 
     if "MaDiemDo" in df.columns:
@@ -226,6 +245,8 @@ def build_regular_30m_grid(df_raw: pd.DataFrame) -> pd.DataFrame:
 
         # Đánh dấu dữ liệu thiếu trên lưới trước khi can thiệp
         group_reindexed["was_raw_missing"] = group_reindexed["P_kW"].isna().astype(int)
+        if "P_outlier" in group_reindexed.columns:
+            group_reindexed["P_outlier"] = group_reindexed["P_outlier"].fillna(0).astype(int)
         grid_list.append(group_reindexed.reset_index())
 
     df_grid = pd.concat(grid_list, ignore_index=True)
@@ -382,16 +403,19 @@ def generate_station_summary(df_raw: pd.DataFrame, df_grid: pd.DataFrame, df_cle
         clean_missing_pct = (clean_missing / total_slots) * 100
 
         imputed_count = int(clean_sub["is_imputed"].sum())
+        outlier_count = int(clean_sub["P_outlier"].sum()) if "P_outlier" in clean_sub.columns else 0
         p_mean_kw = clean_sub["P_kW"].mean()
         p_max_kw = clean_sub["P_kW"].max()
         p_mean_mw = clean_sub["P_MW"].mean() if "P_MW" in clean_sub.columns else (p_mean_kw / 1000.0 if pd.notna(p_mean_kw) else None)
         p_max_mw = clean_sub["P_MW"].max() if "P_MW" in clean_sub.columns else (p_max_kw / 1000.0 if pd.notna(p_max_kw) else None)
+        p_raw_max_mw = raw_sub["P_MW_raw"].max() if "P_MW_raw" in raw_sub.columns else (raw_sub["P_kW"].max() if "P_kW" in raw_sub.columns else None)
 
         summary.append({
             "MaDiemDo": pid,
             "TenDiemDo": name,
             "raw_recorded_rows": raw_rows,
             "raw_null_pct": round(float(raw_null_pct), 2),
+            "outliers_flagged_count": outlier_count,
             "total_30m_grid_slots": total_slots,
             "grid_missing_pct": round(float(grid_missing_pct), 2),
             "imputed_steps_count": imputed_count,
@@ -399,7 +423,8 @@ def generate_station_summary(df_raw: pd.DataFrame, df_grid: pd.DataFrame, df_cle
             "P_mean_kW": round(float(p_mean_kw), 1) if pd.notna(p_mean_kw) else None,
             "P_max_kW": round(float(p_max_kw), 1) if pd.notna(p_max_kw) else None,
             "P_mean_MW": round(float(p_mean_mw), 3) if pd.notna(p_mean_mw) else None,
-            "P_max_MW": round(float(p_max_mw), 3) if pd.notna(p_max_mw) else None
+            "P_max_MW": round(float(p_max_mw), 3) if pd.notna(p_max_mw) else None,
+            "P_raw_max_MW": round(float(p_raw_max_mw), 3) if pd.notna(p_raw_max_mw) else None
         })
 
     df_summary = pd.DataFrame(summary).sort_values(by="P_mean_kW", ascending=False).reset_index(drop=True)

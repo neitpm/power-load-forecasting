@@ -11,8 +11,13 @@ IA,float64,501,0.08,38252
 IB,float64,750,0.11,37846
 IC,float64,786,0.12,38095
 CosF,float64,894,0.14,357
-P_kW,float64,1065,0.16,37365
-Q_kVAr,float64,948,0.15,16706
-P_MW,float64,1065,0.16,37365
-Q_MVAr,float64,948,0.15,16706
+P_kW,float64,1075,0.16,37355
+Q_kVAr,float64,958,0.15,16706
+P_MW_raw,float64,1065,0.16,37365
+P_kW_raw,float64,1065,0.16,37365
+P_outlier,int64,0,0.0,2
+P_MW,float64,1075,0.16,37355
+Q_MVAr_raw,float64,948,0.15,16706
+Q_kVAr_raw,float64,948,0.15,16706
+Q_MVAr,float64,958,0.15,16706
 source_file,object,0,0.0,65

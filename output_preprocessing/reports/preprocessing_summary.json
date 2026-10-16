@@ -1,5 +1,5 @@
 {
-    "timestamp": "2026-10-16T16:31:57.067657",
+    "timestamp": "2026-10-16T16:45:31.436052",
     "total_files_read": 67,
     "raw_rows": 653469,
     "clean_rows": 675024,
@@ -9,7 +9,7 @@
         "end": "2025-08-30 23:35:57"
     },
     "split_info": {
-        "train_samples": 65755,
+        "train_samples": 65753,
         "train_range": [
             "2020-03-01 00:00:00",
             "2024-01-06 06:30:00"
