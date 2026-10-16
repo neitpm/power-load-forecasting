@@ -1,0 +1,32 @@
+{
+    "method": "Moving-Block Bootstrap (Block=48 steps / 24h, B=1000 iterations)",
+    "evaluated_samples": 14385,
+    "XGBoost_vs_Persistence": {
+        "delta_rmse_mean_kW": -9.14,
+        "ci_rmse_95_kW": [
+            -97.58,
+            75.52
+        ],
+        "rmse_better_pct": 44.0,
+        "delta_mae_mean_kW": -59.65,
+        "ci_mae_95_kW": [
+            -115.29,
+            -10.83
+        ],
+        "is_significant_at_005": false
+    },
+    "HistGBDT_vs_Persistence": {
+        "delta_rmse_mean_kW": -0.59,
+        "ci_rmse_95_kW": [
+            -82.99,
+            79.22
+        ],
+        "rmse_better_pct": 52.1,
+        "delta_mae_mean_kW": -56.09,
+        "ci_mae_95_kW": [
+            -109.43,
+            -8.53
+        ],
+        "is_significant_at_005": false
+    }
+}
