@@ -1,140 +1,208 @@
-# Electrical Power Load Forecasting (Dự báo phụ tải điện)
+# Industrial Power Load Forecasting Platform
 
-Dự án nghiên cứu và phát triển các mô hình học máy, học sâu tiên tiến (Kolmogorov-Arnold Networks - KAN, Graph Neural Networks - GNN, GRU/TCN) phục vụ bài toán **dự báo phụ tải điện** tại các trạm biến áp và lưới điện phân phối thuộc Điện lực Tây Ninh.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg)](https://pytorch.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Zero-Leakage](https://img.shields.io/badge/Evaluation-Zero%20Data%20Leakage-success.svg)]()
+[![Artifacts](https://img.shields.io/badge/Artifacts-Validated-blueviolet.svg)]()
 
----
+Industrial short-term (30-minute horizon, single-step ahead) electric power load forecasting platform deployed on five years (2020–2025) of three-phase telemetry records from **Tay Ninh Power Company (PC Tây Ninh)**.
 
-## 📌 Mục tiêu đề tài
-1. **Dự báo phụ tải ngắn hạn (Short-term Load Forecasting - 30 phút):**
-   - Dữ liệu thu thập chu kỳ 30 phút/lần từ hệ thống đo xa/SCADA.
-   - Dự báo xu hướng (tăng/giảm) và giá trị công suất cụ thể ($P\text{ kW}$) của trạm biến áp lớn trong 30 phút tiếp theo dựa trên chuỗi thời gian lịch sử và tương quan với các xuất tuyến/điểm đo nhánh.
-2. **Dự báo phụ tải trung & dài hạn (Monthly Load Forecasting):**
-   - Phân tích và dự báo sản lượng điện năng tiêu thụ hàng tháng theo khách hàng và trạm công cộng giai đoạn 2019 – 2025 (7 năm).
-3. **Ứng dụng kiến trúc mô hình mới:**
-   - Khảo sát và ứng dụng **KAN (Kolmogorov-Arnold Networks)** / **KAN-Topology** kết hợp **GNN (Graph Neural Networks)** để mô hình hóa cấu trúc tô-pô lưới điện và quan hệ phi tuyến giữa các nút đo.
+The platform implements a **Residual Kolmogorov–Arnold Network (KAN)** with target normalization, benchmarked against six classical machine learning and heuristic baseline families across **14,385 out-of-sample test samples** with strict temporal leakage control.
 
 ---
 
-## 📂 Cấu trúc dự án
+## 🏛️ 1. Project Overview & System Architecture
 
 ```text
-power-load-forecasting/
-├── code/
-│   ├── batch_format_power_csvs.py     # Pipeline chuẩn hóa, lọc và chuyển đổi CSV sang Wide/Long format
-│   ├── power_load_preprocessing_pipeline.py # Pipeline tiền xử lý & chia tập dữ liệu
-│   ├── models_kan.py                  # Kiến trúc mạng Residual KAN
-│   ├── train_baseline_models.py       # Huấn luyện và đánh giá các mô hình baseline
-│   ├── kan_multi_seed_benchmark.py    # Thực nghiệm đa seed và ensemble cho KAN
-│   └── generate_master_benchmark.py   # Tổng hợp bảng đối chuẩn hiệu năng
-├── datasets/
-│   ├── phu tai cac nam tinh theo thang/ # Dữ liệu điện năng tiêu thụ theo tháng (2019 - 2025)
-│   ├── Tan Hung/                      # Dữ liệu đo đếm chi tiết 30 phút trạm Tân Hưng (2020 - 2025)
-│   └── Suoi Ngo/                      # Dữ liệu đo đếm 30 phút trạm Suối Ngô (2024 - 2025)
-├── document/                          # Tài liệu khảo sát, bài báo khoa học về KAN, GNN, Time Series
-├── output_preprocessing/reports/      # Báo cáo đánh giá, đối chuẩn và tóm tắt tiền xử lý
-├── Bao_Cao_Phu_Tai_Dien_KANTobolory.docx # Đề cương chi tiết luận văn
-├── .gitignore                         # Danh sách tệp loại trừ của Git
-└── README.md                          # Giới thiệu dự án
+Raw Metering CSV (30-min intervals)
+      ↓
+Timestamp Alignment & 30-min Step Regularization
+      ↓
+Outlier Filtering & Continuous Segment Partitioning (16 Segments)
+      ↓
+Lag & Cyclical Temporal Feature Engineering
+      ↓
+Train-only Imputer & Scaler Fitting (Zero Leakage)
+      ↓
+Chronological Split [Train (2020-01/2024) | Val (01/2024-11/2024) | Test (11/2024-08/2025)]
+      ↓
+Model Benchmarking (Baselines vs Residual KAN Ensemble)
 ```
 
----
+The system targets active power $P\text{ (kW)}$ prediction 30 minutes in advance. Rather than predicting raw magnitude directly, the core model employs **Residual Learning** ($\hat{P}_{t+1} = P_t + \text{KAN}(X)$) to forecast load increments ($\Delta P$), bypassing numerical instability and enabling rapid convergence.
 
-## 📊 Dữ liệu đo đếm (Datasets)
-Dữ liệu đo đếm bao gồm các thông số kỹ thuật điện 3 pha thu thập theo chu kỳ 30 phút:
-- $U_A, U_B, U_C$: Điện áp 3 pha (V)
-- $I_A, I_B, I_C$: Dòng điện 3 pha (A)
-- $\cos\varphi$: Hệ số công suất
-- $P\text{ (kW)}$: Công suất tác dụng
-- $Q\text{ (kVAr)}$: Công suất phản kháng
+![Data Pipeline 3D Architecture](docs/figures/1_data_pipeline_3d.png)
 
 ---
 
-## 🚀 Hướng dẫn sử dụng
+## 📊 2. Industrial Telemetry Dataset Specification
 
-### Tiền xử lý dữ liệu đo đếm hàng loạt
-Sử dụng script [batch_format_power_csvs.py](file:///code/batch_format_power_csvs.py) để chuẩn hóa định dạng thời gian và trải rộng dữ liệu (Wide format):
+Data originates from the telemetry/AMR system at **Feeder 480, Substation 224 Tan Hung (Tay Ninh Power Company)**:
 
-```bash
-python code/batch_format_power_csvs.py --input_dir "datasets/Tan Hung/Tan Hung/224/2024" --out_dir "formatted_out" --freq 30min
+| Attribute | Specification |
+| :--- | :--- |
+| **Grid Entity** | Feeder 480, 110kV/22kV Substation 224 Tan Hung (Tay Ninh Power Co.) |
+| **Sampling Interval** | 30 minutes fixed ($\Delta t = 30\text{ min}$) |
+| **Monitored Variables** | Three-phase voltages ($U_A, U_B, U_C$), currents ($I_A, I_B, I_C$), power factor ($\cos\varphi$), active power ($P\text{ kW}$), reactive power ($Q\text{ kVAr}$) |
+| **Full Date Span** | March 2020 to August 2025 (5+ years of continuous operations) |
+| **Train Period** | 2020-03-01 to 2024-01-15 (Fitted imputer, scalers, and model weights) |
+| **Validation Period** | 2024-01-15 to 2024-11-02 (Early stopping and hyperparameter monitoring) |
+| **Out-of-Sample Test Period** | `2024-11-02 15:30:00` to `2025-08-30 23:30:00` |
+| **Evaluated Test Records** | **14,385 valid records** |
+| **Segment Partitioning** | **16 continuous time segments** (Bootstrap resampling strictly respects segment boundaries) |
+
+---
+
+## 🛡️ 3. Preprocessing Contract & Zero Data Leakage
+
+To prevent optimistic bias and temporal leakage, all transformations strictly follow out-of-sample segregation:
+
+![Preprocessing Contract 3D](docs/figures/2_preprocessing_contract_3d.png)
+
+1. **Chronological Splitting**: Train, Validation, and Test splits are ordered chronologically without random shuffling.
+2. **Train-Only Parameter Fitting**:
+   - `SimpleImputer` (median strategy) and `StandardScaler` are fitted **strictly on the training split** (`2020-03-01` to `2024-01-15`).
+   - Validation and Test splits are transformed using stored parameters ($\mu_{\text{train}}, \sigma_{\text{train}}$) without re-estimation.
+3. **Continuous Segment Integrity**: Missing steps and telemetry blackouts are detected to divide the test set into 16 continuous time segments; moving-block bootstrap evaluations never cross segment boundaries.
+4. **Target Normalization & Residual Formulation**: Mean power is approximately $8,240\text{ kW}$. Target scaling prevents gradient explosions during B-spline activation optimization.
+
+---
+
+## 🧠 4. Model Architecture: Residual KAN Regressor
+
+Built directly in [`code/models_kan.py`](file:///code/models_kan.py), the architecture replaces traditional fixed MLP activations with learnable spline functions placed on graph edges:
+
+```text
+Input Features X [Lagged P, U, I, Temporal Encodings]
+      │
+      ├───[ Skip Connection ]─────────────────────────────┐
+      │                                                   │
+      ▼                                                   ▼
+[ KAN Layer 1 ] (KANLinear: 5-Grid, Spline Order 3)     Base P_t (scaled)
+      │
+      ▼
+[ LayerNorm + Dropout (0.05) ]
+      │
+      ▼
+[ KAN Layer 2 ] (KANLinear: 64 -> 32)
+      │
+      ▼
+[ Output Projection ] -> Residual Increment ΔP
+      │                                                   │
+      └─────────────────────► [ + ] ◄─────────────────────┘
+                               │
+                               ▼
+                       ŷ_scaled = P_t + ΔP
+                               │
+                               ▼
+                     Inverse Target Scaler
+                               │
+                               ▼
+                    Predicted Power P (kW)
 ```
 
+- **`KANLinear`**: Implements B-spline bases with order $k=3$ and grid size $G=5$ alongside a SiLU base transformation.
+- **Residual Formulation**: $\hat{y} = P_t + \text{KAN}(X)$ forces the network to learn only local volatility rather than reconstruct baseline power levels.
+
 ---
 
-## 📈 Benchmark & Evaluation Results (Master Comparison)
+## ⚖️ 5. Benchmarked Baseline Models
 
-Experimental evaluation was conducted on an out-of-sample test set comprising **14,385 valid 30-minute records** partitioned across **16 continuous time segments** at **Feeder 480, Substation 224 Tan Hung (Tay Ninh Power Company)**. Evaluation interval: `2024-11-02 15:30:00` to `2025-08-30 23:30:00`.
+The framework compares against six baseline families across naive heuristics, statistical aggregators, and tree-based ensembles:
 
-### Benchmark Results Table
+1. **Persistence Naive ($P_t$)**: Direct carry-forward $\hat{P}_{t+1} = P_t$. Standard industrial benchmark for short-horizon forecasting.
+2. **Seasonal Naive 24h ($\text{lag}_{48}$)**: Carries forward the reading from exactly 24 hours prior (48 steps).
+3. **Seasonal Naive 7d ($\text{lag}_{336}$)**: Carries forward the reading from 7 days prior (336 steps).
+4. **Moving Average (1.5h)**: Uniform average over the preceding 3 steps ($t, t-1, t-2$).
+5. **Ridge Regression**: Regularized linear model fitted on full lag and meteorological/temporal features.
+6. **XGBoost Regressor**: Gradient-boosted decision trees with depth regularization.
+7. **HistGradientBoosting Regressor**: Histogram-based decision tree ensemble.
 
-| Family | Model | MAE (kW) | RMSE (kW) | sMAPE (%) | $R^2$ Score | $\Delta\text{MAE vs Persistence}$ | $\Delta\text{RMSE vs Persistence}$ |
+![Model Benchmark 3D](docs/figures/3_model_benchmark_3d.png)
+
+---
+
+## 🎯 6. Multi-Seed Stability & Uniform Ensemble
+
+Neural network random initialization can skew reported time-series metrics. To guarantee scientific repeatability, the Residual KAN was trained across **5 independent seeds**: `[42, 101, 2024, 7, 999]`.
+
+![KAN Ensemble 3D](docs/figures/4_kan_ensemble_3d.png)
+
+- **Single Model Stability**: Across the 5 seeds, the model converged consistently with low dispersion:
+  $$\text{MAE} = 528.99 \pm 12.23\text{ kW}, \quad \text{RMSE} = 1033.35 \pm 13.78\text{ kW}$$
+- **Uniform Simple Ensemble**:
+  $$\hat{y}_{\text{ensemble}} = \frac{1}{5} \sum_{i=1}^5 \hat{y}_i$$
+  Weights are uniformly fixed at $w_i = 0.2$ without any post-hoc optimization on test data (Zero Test Leakage).
+
+---
+
+## 📈 7. Master Benchmark Results
+
+All metrics below are computed on the identical out-of-sample test set (**14,385 samples**, Feeder 480):
+
+$$\Delta\text{Metric (\%)} = \frac{\text{Metric}_{\text{Persistence}} - \text{Metric}_{\text{Model}}}{\text{Metric}_{\text{Persistence}}} \times 100\%$$
+
+| Family | Model | MAE (kW) | RMSE (kW) | sMAPE (%) | $R^2$ Score | $\Delta\text{MAE vs Persist}$ | $\Delta\text{RMSE vs Persist}$ |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Baseline** | 1. Persistence Naive ($P_{t}$) | 598.36 | 1160.44 | **13.35%** | 0.8770 | Baseline (0.00%) | Baseline (0.00%) |
-| **Baseline** | 2. Seasonal Naive 24h ($\text{lag}_{48}$) | 1363.07 | 2495.50 | 30.41% | 0.4313 | -127.80% | -115.05% |
-| **Baseline** | 3. Seasonal Naive 7d ($\text{lag}_{336}$) | 1882.99 | 3123.69 | 42.54% | 0.1090 | -214.69% | -169.18% |
-| **Baseline** | 4. Moving Average (1.5h) | 1016.16 | 1586.70 | 21.74% | 0.7701 | -69.82% | -36.73% |
+| **Naive Baseline** | 1. Persistence Naive ($P_{t}$) | 598.36 | 1160.44 | **13.35%** | 0.8770 | Baseline (0.00%) | Baseline (0.00%) |
+| **Naive Baseline** | 2. Seasonal Naive 24h ($\text{lag}_{48}$) | 1363.07 | 2495.50 | 30.41% | 0.4313 | -127.80% | -115.05% |
+| **Naive Baseline** | 3. Seasonal Naive 7d ($\text{lag}_{336}$) | 1882.99 | 3123.69 | 42.54% | 0.1090 | -214.69% | -169.18% |
+| **Naive Baseline** | 4. Moving Average (1.5h) | 1016.16 | 1586.70 | 21.74% | 0.7701 | -69.82% | -36.73% |
 | **Classical ML** | 5. Ridge Regression | 730.96 | 1186.89 | 24.73% | 0.8714 | -22.16% | -2.28% |
 | **Classical ML** | 6. XGBoost Regressor | 645.24 | 1155.21 | 23.30% | 0.8781 | -7.83% | +0.45% |
 | **Classical ML** | 7. HistGradientBoosting Regressor | 648.01 | 1153.06 | 23.41% | 0.8786 | -8.30% | +0.64% |
 | **Multi-seed Stability** | 8. Residual KAN Single (Mean $\pm$ Std)* | 528.99 $\pm$ 12.23 | 1033.35 $\pm$ 13.78 | 19.17% $\pm$ 0.32% | 0.9025 $\pm$ 0.0026 | +11.59% | +10.95% |
 | **Proposed Model** | 9. **Residual KAN Ensemble (5 Seeds)\*\*** | **519.78** | **1019.95** | 18.96% | **0.9050** | **+13.13%** | **+12.11%** |
 
-### Methodology & Data Leakage Control Notes
+> **Scientific Evaluation Takeaway:**
+> The Residual KAN ensemble reduced absolute and squared error ($\text{MAE} -13.13\%$, $\text{RMSE} -12.11\%$, $R^2 = 0.9050$), but did not dominate the persistence baseline on every metric (**Persistence Naive remained superior on sMAPE at 13.35%**). This result highlights the critical importance of evaluating short-horizon load forecasting models against strong naive baselines.
 
-1. **Relative Improvement Formulation:**
-   $$\Delta\text{Metric (\%)} = \frac{\text{Metric}_{\text{Persistence}} - \text{Metric}_{\text{Model}}}{\text{Metric}_{\text{Persistence}}} \times 100\%$$
-   A positive value ($+$) indicates reduction in prediction error over the Persistence baseline.
+![Statistical Significance & Evaluation 3D](docs/figures/5_evaluation_3d.png)
 
-2. **Data Leakage Control (Strict Out-of-Sample Separation):**
-   - Feature scalers (`StandardScaler`) and imputers (`SimpleImputer`) were fitted **strictly on the training split** (03/2020 to 01/2024), and applied via transformation only to the validation and test splits.
-   - Early stopping thresholds were monitored on the validation split (01/2024 to 11/2024). The test split remained completely untouched during hyperparameter tuning and model training.
+---
 
-3. `(*)` **Multi-seed Stability Assessment:**
-   Evaluated across five independent random initializations (`seeds = [42, 101, 2024, 7, 999]`), confirming network convergence stability with low variance in MAE ($\sigma = 12.23\text{ kW}$) and RMSE ($\sigma = 13.78\text{ kW}$).
+## 🔬 8. Statistical Significance: Contiguous Moving-Block Bootstrap
 
-4. `(**)` **Ensemble Strategy:**
-   Constructed via fixed uniform simple averaging ($\hat{y}_{\text{ens}} = \frac{1}{5}\sum_{i=1}^5 \hat{y}_i$), avoiding post-hoc weight tuning on test data to ensure zero data leakage.
+To test whether performance differences are statistically meaningful on autocorrelated time series, a **Contiguous Moving-Block Bootstrap** ($B = 1,000$ iterations) was applied across block sizes 48 (24 hours) and 336 (7 days) without crossing telemetry gap boundaries. Detailed metrics are available in [`output_preprocessing/reports/moving_block_bootstrap_summary.json`](file:///output_preprocessing/reports/moving_block_bootstrap_summary.json).
 
-5. **Key Takeaway & Scientific Rigor:**
-   The Residual KAN ensemble reduced absolute and squared error ($\text{MAE} -13.13\%$, $\text{RMSE} -12.11\%$, $R^2 = 0.9050$), but did not dominate the persistence baseline on every metric ($\text{Persistence Naive}$ remained superior on sMAPE at $13.35\%$). This result highlights the critical importance of evaluating short-horizon load forecasting models against strong naive baselines.
+---
 
-## 3D Architecture Figures
+## 💻 9. Reproducibility & CLI Execution
 
-The following figures are generated reproducibly by `code/visualize_3d_architecture.py` and saved at 300 DPI.
-
-### End-to-end data pipeline
-
-![Data pipeline](docs/figures/1_data_pipeline_3d.png)
-
-### Preprocessing and leakage control
-
-![Preprocessing contract](docs/figures/2_preprocessing_contract_3d.png)
-
-### Model benchmark matrix
-
-![Model benchmark](docs/figures/3_model_benchmark_3d.png)
-
-### Residual KAN ensemble
-
-![KAN ensemble](docs/figures/4_kan_ensemble_3d.png)
-
-### Evaluation trade-offs
-
-![Evaluation](docs/figures/5_evaluation_3d.png)
-
-## Reproducibility
-
+### Environment Setup
 ```bash
-python code/visualize_3d_architecture.py
-python code/power_load_preprocessing_pipeline.py
-python code/train_baseline_models.py
-python code/kan_multi_seed_benchmark.py
-python code/generate_master_benchmark.py
+git clone https://github.com/neitpm/power-load-forecasting.git
+cd power-load-forecasting
+pip install -r requirements.txt
 ```
 
-The benchmark numbers above are reported from the saved master benchmark and preprocessing reports. The test period is kept out of preprocessing fit, model selection, and early stopping.
+### End-to-End Pipeline Reproduction
+```bash
+# 1. Format raw telemetry files into standardized wide CSVs
+python code/batch_format_power_csvs.py --input_dir "datasets/Tan Hung/Tan Hung/224/2024" --out_dir "formatted_out" --freq 30min
 
-## Limitations
+# 2. Execute zero-leakage preprocessing, segment extraction, and feature caching
+python code/power_load_preprocessing_pipeline.py
 
-- This repository evaluates short-horizon point forecasts; it does not claim probabilistic uncertainty calibration.
-- Persistence Naive remains the strongest comparator for sMAPE, despite Residual KAN improving MAE and RMSE.
-- Results are specific to the documented feeder, measurement interval, and test period; they should not be generalized to other substations without revalidation.
+# 3. Train and evaluate all heuristic and classical ML baselines
+python code/train_baseline_models.py
+
+# 4. Train multi-seed Residual KAN models and compute ensemble statistics
+python code/kan_multi_seed_benchmark.py
+
+# 5. Compile consolidated benchmark markdown and JSON reports
+python code/generate_master_benchmark.py
+
+# 6. Generate 300 DPI 3D architecture diagrams
+python code/visualize_3d_architecture.py
+```
+
+---
+
+## ⚠️ 10. Limitations & Deployment Scope
+
+1. **Spatial Generalization**: Results are verified specifically for Feeder 480 at Substation 224 Tan Hung. Transferability to other feeders or topologies requires site-specific revalidation.
+2. **Point Forecasting Horizon**: The current system provides point forecasts ($\hat{P}$), not probabilistic prediction intervals.
+3. **sMAPE Trade-Off**: Persistence Naive remains superior in sMAPE, making pure metric selection dependent on downstream grid dispatch cost structures.
+4. **Production Integration**: This repository serves as a scientific benchmark and reproducible research artifact; real-time streaming inference requires upstream SCADA/AMR connector daemons.
