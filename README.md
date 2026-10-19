@@ -169,7 +169,53 @@ To test whether performance differences are statistically meaningful on autocorr
 
 ---
 
-## 💻 9. Reproducibility & CLI Execution
+## 📦 9. Hugging Face Hub Artifacts & Verification
+
+All reproducible artifacts, benchmark reports, and validation manifests are officially published and indexed on Hugging Face Hub:
+
+👉 **Hugging Face Model Hub**: [**https://huggingface.co/neitpm/power-load-forecasting**](https://huggingface.co/neitpm/power-load-forecasting)
+
+### Published Artifacts List
+
+| Relative Path | Size | Description |
+| :--- | :---: | :--- |
+| `code/models_kan.py` | 16.7 KB | Residual KAN Regressor PyTorch architecture definition |
+| `code/power_load_preprocessing_pipeline.py` | 40.2 KB | Zero-leakage chronological preprocessing pipeline |
+| `code/kan_multi_seed_benchmark.py` | 15.9 KB | 5-seed training stability and uniform ensembling runner |
+| `code/temporal_significance_test.py` | 15.7 KB | Contiguous moving-block bootstrap statistical module |
+| `code/train_baseline_models.py` | 20.7 KB | Heuristic and classical ML baselines evaluation suite |
+| `code/generate_master_benchmark.py` | 8.4 KB | Master benchmark consolidation and markdown table generator |
+| `code/visualize_3d_architecture.py` | 20.2 KB | 3D isometric architecture figures generator (300 DPI) |
+| `reports/master_model_comparison_benchmark.md` | 4.5 KB | Consolidated master benchmark markdown report |
+| `reports/moving_block_bootstrap_summary.json` | 2.4 KB | Block 48/336 contiguous bootstrap test results |
+| `metadata/weights_manifest.json` | 2.5 KB | Integrity manifest containing SHA-256 hashes for all artifacts |
+| `requirements.txt` | 192 B | Minimal pinned dependency requirements |
+
+> **Privacy & Compliance Note:**
+> In compliance with enterprise data governance regulations of **Tay Ninh Power Company**, the proprietary 5-year raw industrial metering dataset is **not publicly uploaded** to the repository or Hugging Face Hub. Users can execute the preprocessing and modeling pipeline on their own standard 3-phase metering CSV files.
+
+### Download & Verification with `huggingface_hub`
+
+You can download the full release snapshot and verify SHA-256 integrity using the Python script below:
+
+```python
+from huggingface_hub import snapshot_download
+
+# Download verified release snapshot
+snapshot_dir = snapshot_download(repo_id="neitpm/power-load-forecasting")
+print(f"Snapshot downloaded to: {snapshot_dir}")
+```
+
+To run the automated SHA-256 integrity check and forward-pass smoke test:
+
+```bash
+# Automated independent verification
+python verify_hf.py
+```
+
+---
+
+## 💻 10. Reproducibility & CLI Execution
 
 ### Environment Setup
 ```bash
@@ -201,7 +247,7 @@ python code/visualize_3d_architecture.py
 
 ---
 
-## ⚠️ 10. Limitations & Deployment Scope
+## ⚠️ 11. Limitations & Deployment Scope
 
 1. **Spatial Generalization**: Results are verified specifically for Feeder 480 at Substation 224 Tan Hung. Transferability to other feeders or topologies requires site-specific revalidation.
 2. **Point Forecasting Horizon**: The current system provides point forecasts ($\hat{P}$), not probabilistic prediction intervals.

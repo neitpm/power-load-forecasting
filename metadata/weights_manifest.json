@@ -1,0 +1,68 @@
+[
+  {
+    "path": "README.md",
+    "size_bytes": 5164,
+    "sha256": "f5efde9c1defa5a1996ef54b088cf25279729e7b1c8d568393b79f6030395ed6",
+    "description": "Hugging Face Model Card documentation and specification"
+  },
+  {
+    "path": "code/generate_master_benchmark.py",
+    "size_bytes": 8396,
+    "sha256": "23a90af94f4a68b39ea006e290be746dc4edc2a43a137b5b026eb36f05db541e",
+    "description": "Master benchmark consolidation and table generator"
+  },
+  {
+    "path": "code/kan_multi_seed_benchmark.py",
+    "size_bytes": 15937,
+    "sha256": "9ee13d2d4e441e946b76fbac75ba258724fc0aa59c5f614075436c818151e365",
+    "description": "5-seed training stability and uniform ensembling runner"
+  },
+  {
+    "path": "code/models_kan.py",
+    "size_bytes": 16673,
+    "sha256": "41a43e8571412ed7297a19868d65319a543b51a1205940b241f835bfb991baa1",
+    "description": "Residual KAN Regressor PyTorch architecture definition"
+  },
+  {
+    "path": "code/power_load_preprocessing_pipeline.py",
+    "size_bytes": 40222,
+    "sha256": "fd28f20672de90bad0f4c715e471db6795582e25b5a4b9e8a9c9324b162a648a",
+    "description": "Zero-leakage chronological preprocessing pipeline"
+  },
+  {
+    "path": "code/temporal_significance_test.py",
+    "size_bytes": 15655,
+    "sha256": "d0bb086b0412cf31a1c618995ee7f81a8e84a40938aa89f8a8c93b3a400b7d18",
+    "description": "Contiguous moving-block bootstrap temporal significance testing module"
+  },
+  {
+    "path": "code/train_baseline_models.py",
+    "size_bytes": 20706,
+    "sha256": "f8db4b49057be9f82cad6b1eab0dbc894bb71dea66ee99dfcfe8adb422246615",
+    "description": "Heuristic and classical ML baselines evaluation suite"
+  },
+  {
+    "path": "code/visualize_3d_architecture.py",
+    "size_bytes": 20185,
+    "sha256": "d06c6238568a0bc8da884f7295e7ae9086dfde6033a2adb43914da7a177c0df1",
+    "description": "3D isometric architecture figures generator (300 DPI)"
+  },
+  {
+    "path": "reports/master_model_comparison_benchmark.md",
+    "size_bytes": 4495,
+    "sha256": "6a56c5530d0190b898f23e44e43d5bb890cc7a4e5abfc069f17df672d25287f5",
+    "description": "Master benchmark markdown report with all test metrics"
+  },
+  {
+    "path": "reports/moving_block_bootstrap_summary.json",
+    "size_bytes": 2372,
+    "sha256": "85d72169c3fbad407973f71bdbc8b3cb9ed6ba2657810ebae024de41ea164730",
+    "description": "Contiguous moving-block bootstrap statistical validation report"
+  },
+  {
+    "path": "requirements.txt",
+    "size_bytes": 192,
+    "sha256": "bb4f7d8b19b4b1d5373d45ca8c64440696b280abfd32c27a863bd720c2589277",
+    "description": "Minimal pinned dependency requirements"
+  }
+]
