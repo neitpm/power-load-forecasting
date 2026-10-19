@@ -2,6 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg)](https://pytorch.org/)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Models%20%26%20Artifacts-yellow)](https://huggingface.co/neitpm/power-load-forecasting)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Zero-Leakage](https://img.shields.io/badge/Evaluation-Zero%20Data%20Leakage-success.svg)]()
 [![Artifacts](https://img.shields.io/badge/Artifacts-Validated-blueviolet.svg)]()
