@@ -96,3 +96,45 @@ Experimental evaluation was conducted on an out-of-sample test set comprising **
 
 5. **Key Takeaway & Scientific Rigor:**
    The Residual KAN ensemble reduced absolute and squared error ($\text{MAE} -13.13\%$, $\text{RMSE} -12.11\%$, $R^2 = 0.9050$), but did not dominate the persistence baseline on every metric ($\text{Persistence Naive}$ remained superior on sMAPE at $13.35\%$). This result highlights the critical importance of evaluating short-horizon load forecasting models against strong naive baselines.
+
+## 3D Architecture Figures
+
+The following figures are generated reproducibly by `code/visualize_3d_architecture.py` and saved at 300 DPI.
+
+### End-to-end data pipeline
+
+![Data pipeline](docs/figures/1_data_pipeline_3d.png)
+
+### Preprocessing and leakage control
+
+![Preprocessing contract](docs/figures/2_preprocessing_contract_3d.png)
+
+### Model benchmark matrix
+
+![Model benchmark](docs/figures/3_model_benchmark_3d.png)
+
+### Residual KAN ensemble
+
+![KAN ensemble](docs/figures/4_kan_ensemble_3d.png)
+
+### Evaluation trade-offs
+
+![Evaluation](docs/figures/5_evaluation_3d.png)
+
+## Reproducibility
+
+```bash
+python code/visualize_3d_architecture.py
+python code/power_load_preprocessing_pipeline.py
+python code/train_baseline_models.py
+python code/kan_multi_seed_benchmark.py
+python code/generate_master_benchmark.py
+```
+
+The benchmark numbers above are reported from the saved master benchmark and preprocessing reports. The test period is kept out of preprocessing fit, model selection, and early stopping.
+
+## Limitations
+
+- This repository evaluates short-horizon point forecasts; it does not claim probabilistic uncertainty calibration.
+- Persistence Naive remains the strongest comparator for sMAPE, despite Residual KAN improving MAE and RMSE.
+- Results are specific to the documented feeder, measurement interval, and test period; they should not be generalized to other substations without revalidation.
