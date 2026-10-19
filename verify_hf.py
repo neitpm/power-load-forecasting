@@ -12,6 +12,14 @@ import hashlib
 import tempfile
 import torch
 from pathlib import Path
+
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 from huggingface_hub import snapshot_download
 
 def verify_release(repo_id="neitpm/power-load-forecasting"):
@@ -39,11 +47,20 @@ def verify_release(repo_id="neitpm/power-load-forecasting"):
             actual_sha = hashlib.sha256(target_file.read_bytes()).hexdigest()
             if actual_sha != expected_sha:
                 raise ValueError(f"SHA-256 mismatch for {rel_path}: expected {expected_sha}, got {actual_sha}")
-            print(f"  ✓ {rel_path}: SHA-256 verified ({item['size_bytes']} bytes)")
+            print(f"  [OK] {rel_path}: SHA-256 verified ({item['size_bytes']} bytes)")
 
-        # Smoke test: import architecture and run forward pass
-        sys.path.insert(0, str(snapshot_path))
-        from code.models_kan import ResidualKANRegressor
+        # Smoke test: import architecture from snapshot and run forward pass
+        import importlib.util
+        code_dir = snapshot_path / "code"
+        if str(code_dir) not in sys.path:
+            sys.path.insert(0, str(code_dir))
+
+        models_kan_path = code_dir / "models_kan.py"
+        spec = importlib.util.spec_from_file_location("models_kan", str(models_kan_path))
+        models_kan = importlib.util.module_from_spec(spec)
+        sys.modules["models_kan"] = models_kan
+        spec.loader.exec_module(models_kan)
+        ResidualKANRegressor = models_kan.ResidualKANRegressor
 
         print("Running PyTorch forward pass smoke test...")
         in_features = 24
