@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
 """
 =============================================================================
-VISUALIZE 3D ARCHITECTURE & PIPELINE FIGURES (300 DPI)
+VISUALIZE 3D-STYLE ISOMETRIC ARCHITECTURE FIGURES (300 DPI)
 For Scientific ML & Industrial Time-Series Forecasting Portfolio
 =============================================================================
-Outputs generated in docs/figures/:
-1. 1_data_pipeline_3d.png
-2. 2_preprocessing_contract_3d.png
-3. 3_model_benchmark_3d.png
-4. 4_kan_ensemble_3d.png
-5. 5_evaluation_3d.png
+Layout Principles:
+1. Clear Canvas: 16:9 widescreen (figsize=(14, 8)), generous vertical & horizontal spacing.
+2. 2D Isometric projection with explicit depth vector (dx=0.5, dy=0.3) for clean rendering.
+3. Strict separation of hierarchy:
+   - Header: Category tag, Title, Subtitle at top.
+   - Central: Isometric 3D tensor blocks with ample horizontal clearance.
+   - Inside/Above Block: Stage / Module Title (Bold, concise).
+   - Below Block: Separate dedicated Annotation Box for specifications, shapes, metrics.
+4. Zero Overlap: Arrows flow cleanly between blocks without crossing text or edges.
 =============================================================================
 """
 
@@ -18,256 +21,411 @@ import sys
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.patches as patches
+from matplotlib.patches import Polygon, FancyBboxPatch
 
-# High DPI and styling configuration
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica']
 plt.rcParams['axes.unicode_minus'] = False
-plt.rcParams['figure.autolayout'] = False
 
 OUTPUT_DIR = Path("docs/figures")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+BG_COLOR = '#0b0f19'
+CARD_BG = '#111827'
+BORDER_COLOR = '#1f2937'
 
-def draw_3d_box(ax, x, y, z, dx, dy, dz, color='#2563eb', alpha=0.8, edge_color='#1e293b'):
-    """Draw a 3D isometric cuboid block."""
-    xx = [x, x+dx, x+dx, x, x, x+dx, x+dx, x]
-    yy = [y, y, y+dy, y+dy, y, y, y+dy, y+dy]
-    zz = [z, z, z, z, z+dz, z+dz, z+dz, z+dz]
-    vertices = [
-        [[xx[0], yy[0], zz[0]], [xx[1], yy[1], zz[0]], [xx[2], yy[2], zz[0]], [xx[3], yy[3], zz[0]]], # bottom
-        [[xx[4], yy[4], zz[4]], [xx[5], yy[5], zz[4]], [xx[6], yy[6], zz[4]], [xx[7], yy[7], zz[4]]], # top
-        [[xx[0], yy[0], zz[0]], [xx[1], yy[1], zz[0]], [xx[5], yy[5], zz[4]], [xx[4], yy[4], zz[4]]], # front
-        [[xx[2], yy[2], zz[0]], [xx[3], yy[3], zz[0]], [xx[7], yy[7], zz[4]], [xx[6], yy[6], zz[4]]], # back
-        [[xx[0], yy[0], zz[0]], [xx[3], yy[3], zz[0]], [xx[7], yy[7], zz[4]], [xx[4], yy[4], zz[4]]], # left
-        [[xx[1], yy[1], zz[0]], [xx[2], yy[2], zz[0]], [xx[6], yy[6], zz[4]], [xx[5], yy[5], zz[4]]]  # right
-    ]
-    poly = Poly3DCollection(vertices, facecolors=color, linewidths=1.2, edgecolors=edge_color, alpha=alpha)
-    ax.add_collection3d(poly)
+
+def draw_isometric_block(ax, x, y, w, h, depth=0.8, color='#2563eb', top_color=None, side_color=None, alpha=0.9, edge_color='#ffffff'):
+    """
+    Draws a clean 3D isometric cuboid block using 2D polygons to avoid 3D camera overlap.
+    x, y: bottom-left of front face
+    w: width, h: height
+    depth: isometric extrusion amount
+    """
+    if top_color is None:
+        top_color = color
+    if side_color is None:
+        side_color = color
+
+    # Isometric offsets: dx > 0, dy > 0 (angles up-right)
+    iso_dx = depth * 0.7
+    iso_dy = depth * 0.45
+
+    # 1. Front face
+    front_pts = np.array([
+        [x, y],
+        [x + w, y],
+        [x + w, y + h],
+        [x, y + h]
+    ])
+    front = Polygon(front_pts, closed=True, facecolor=color, edgecolor=edge_color, linewidth=1.5, alpha=alpha, zorder=3)
+    ax.add_patch(front)
+
+    # 2. Top face
+    top_pts = np.array([
+        [x, y + h],
+        [x + w, y + h],
+        [x + w + iso_dx, y + h + iso_dy],
+        [x + iso_dx, y + h + iso_dy]
+    ])
+    top = Polygon(top_pts, closed=True, facecolor=top_color, edgecolor=edge_color, linewidth=1.5, alpha=min(alpha + 0.1, 1.0), zorder=4)
+    ax.add_patch(top)
+
+    # 3. Right side face
+    side_pts = np.array([
+        [x + w, y],
+        [x + w + iso_dx, y + iso_dy],
+        [x + w + iso_dx, y + h + iso_dy],
+        [x + w, y + h]
+    ])
+    side = Polygon(side_pts, closed=True, facecolor=side_color, edgecolor=edge_color, linewidth=1.5, alpha=max(alpha - 0.2, 0.4), zorder=3)
+    ax.add_patch(side)
+
+    return (x + w/2, y + h/2) # center of front face
+
+
+def add_header(ax, tag, title, subtitle):
+    """Draws standardized high-contrast portfolio header."""
+    ax.text(0.5, 0.96, tag.upper(), transform=ax.transAxes, color='#38bdf8', fontsize=10,
+            fontweight='bold', ha='center', va='top')
+    ax.text(0.5, 0.91, title, transform=ax.transAxes, color='#ffffff', fontsize=16,
+            fontweight='bold', ha='center', va='top')
+    ax.text(0.5, 0.86, subtitle, transform=ax.transAxes, color='#94a3b8', fontsize=11,
+            ha='center', va='top')
 
 
 # -----------------------------------------------------------------------------
-# Figure 1: 1_data_pipeline_3d.png
+# FIGURE 1: 1_data_pipeline_3d.png
 # -----------------------------------------------------------------------------
 def make_fig1_data_pipeline():
-    fig = plt.figure(figsize=(12, 7), dpi=300)
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_facecolor('#0f172a')
-    fig.patch.set_facecolor('#0f172a')
+    fig, ax = plt.subplots(figsize=(15, 8.5), dpi=300)
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
 
-    # Draw 4 volumetric processing stages
+    add_header(ax, "Data Ingestion & Telemetry Processing Flow",
+               "Industrial 3-Phase Telemetry Pipeline & Continuous Segment Extraction",
+               "Feeder 480 - Substation 224 Tan Hung (Tay Ninh Power Company) | 2020 - 2025")
+
+    # 4 distinct pipeline stages placed horizontally with wide gaps
     stages = [
-        ("1. Industrial 3-Phase\nRaw Metering\n(U, I, cosφ, P, Q)", 0, '#0284c7'),
-        ("2. Timestamp Alignment\n& 30-min Step Regularization", 3, '#0d9488'),
-        ("3. Outlier Filter &\nGap Partitioning", 6, '#d97706'),
-        ("4. 16 Continuous Segments\n(14,385 Test Records)", 9, '#16a34a')
+        {
+            "num": "01",
+            "title": "Raw Telemetry\nIngestion",
+            "x": 0.8, "y": 3.2, "w": 2.2, "h": 2.2,
+            "col": '#0284c7', "top": '#38bdf8', "side": '#0369a1',
+            "specs": ["3-Phase U, I, cosφ, P, Q", "30-min sampling interval", "Multi-file quarterly CSVs"]
+        },
+        {
+            "num": "02",
+            "title": "Timestamp Grid\nRegularization",
+            "x": 4.1, "y": 3.2, "w": 2.2, "h": 2.2,
+            "col": '#0d9488', "top": '#2dd4bf', "side": '#0f766e',
+            "specs": ["Strict 30-min time index", "Detect missing step intervals", "Wide/Long tensor alignment"]
+        },
+        {
+            "num": "03",
+            "title": "Outlier Filtering &\nGap Partitioning",
+            "x": 7.4, "y": 3.2, "w": 2.2, "h": 2.2,
+            "col": '#d97706', "top": '#fbbf24', "side": '#b45309',
+            "specs": ["Physical bounds sanity check", "Telemetry blackout isolator", "Segment break boundaries"]
+        },
+        {
+            "num": "04",
+            "title": "Continuous Segments\nCache Construction",
+            "x": 10.7, "y": 3.2, "w": 2.2, "h": 2.2,
+            "col": '#16a34a', "top": '#4ade80', "side": '#15803d',
+            "specs": ["16 continuous test segments", "14,385 valid test records", "No cross-gap lag lookback"]
+        }
     ]
 
-    for title, x_pos, col in stages:
-        draw_3d_box(ax, x=x_pos, y=1, z=0, dx=2, dy=4, dz=2, color=col, alpha=0.75, edge_color='#ffffff')
-        ax.text(x_pos + 1.0, 3.0, 2.4, title, color='#ffffff', fontsize=9, fontweight='bold',
-                ha='center', va='bottom', bbox=dict(boxstyle="round,pad=0.3", fc='#1e293b', ec=col, lw=1))
+    for s in stages:
+        # 3D block
+        cx, cy = draw_isometric_block(ax, s["x"], s["y"], s["w"], s["h"], depth=0.7,
+                                     color=s["col"], top_color=s["top"], side_color=s["side"],
+                                     alpha=0.85, edge_color='#ffffff')
 
-    # Connect with 3D arrows
-    for x_arr in [2.2, 5.2, 8.2]:
-        ax.quiver(x_arr, 3.0, 1.0, 0.6, 0, 0, color='#38bdf8', arrow_length_ratio=0.3, linewidth=2.5)
+        # Text inside front face (Title)
+        ax.text(cx, cy + 0.35, s["num"], color='#ffffff', fontsize=16, fontweight='bold', ha='center', va='center', alpha=0.9)
+        ax.text(cx, cy - 0.35, s["title"], color='#ffffff', fontsize=10.5, fontweight='bold', ha='center', va='center')
 
-    ax.set_xlim(-1, 12)
-    ax.set_ylim(-1, 7)
-    ax.set_zlim(-0.5, 4.5)
-    ax.view_init(elev=24, azim=-55)
+        # Annotation box below block (Specs)
+        box_y = 1.3
+        bbox_props = dict(boxstyle="round,pad=0.5", fc='#1e293b', ec=s["col"], lw=1.5)
+        spec_text = "\n".join([f"• {item}" for item in s["specs"]])
+        ax.text(s["x"] + s["w"]/2, box_y, spec_text, color='#e2e8f0', fontsize=9.5, ha='center', va='top', bbox=bbox_props)
+
+    # Clean connecting arrows between blocks
+    for x_start in [3.4, 6.7, 10.0]:
+        ax.annotate("", xy=(x_start + 0.6, 4.3), xytext=(x_start, 4.3),
+                    arrowprops=dict(arrowstyle="->", color='#38bdf8', lw=2.5, mutation_scale=18))
+
+    ax.set_xlim(0, 13.8)
+    ax.set_ylim(0, 7.5)
     ax.axis('off')
-    plt.title("Industrial Telemetry Pipeline & Continuous Segment Extraction\nFeeder 480 - Substation 224 Tan Hung (Tay Ninh Power Co.)",
-              color='#f8fafc', fontsize=13, fontweight='bold', pad=15)
+
     plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "1_data_pipeline_3d.png", dpi=300, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    plt.savefig(OUTPUT_DIR / "1_data_pipeline_3d.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
     plt.close()
-    print("Saved 1_data_pipeline_3d.png")
+    print("Saved 1_data_pipeline_3d.png (Cleaned)")
 
 
 # -----------------------------------------------------------------------------
-# Figure 2: 2_preprocessing_contract_3d.png
+# FIGURE 2: 2_preprocessing_contract_3d.png
 # -----------------------------------------------------------------------------
 def make_fig2_preprocessing_contract():
-    fig = plt.figure(figsize=(12, 7), dpi=300)
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_facecolor('#0b0f19')
-    fig.patch.set_facecolor('#0b0f19')
+    fig, ax = plt.subplots(figsize=(15, 8.5), dpi=300)
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
 
-    # Draw chronological splits with isolation barrier
-    draw_3d_box(ax, x=0, y=0, z=0, dx=5, dy=3, dz=1.8, color='#3b82f6', alpha=0.8, edge_color='#93c5fd')
-    ax.text(2.5, 1.5, 2.1, "TRAIN SPLIT\n03/2020 - 01/2024\n(Fit Scaler & Imputer)",
-            color='#ffffff', fontsize=9, fontweight='bold', ha='center', va='bottom',
-            bbox=dict(boxstyle="round,pad=0.3", fc='#1e3a8a', ec='#60a5fa'))
+    add_header(ax, "Zero Data Leakage & Temporal Segregation Protocol",
+               "Chronological Train / Validation / Test Splitting Contract",
+               "Parameters fitted strictly on historical train records | Zero lookahead bias")
 
-    draw_3d_box(ax, x=6, y=0, z=0, dx=2.2, dy=3, dz=1.8, color='#f59e0b', alpha=0.8, edge_color='#fde68a')
-    ax.text(7.1, 1.5, 2.1, "VALIDATION SPLIT\n01/2024 - 11/2024\n(Early Stopping Only)",
-            color='#ffffff', fontsize=9, fontweight='bold', ha='center', va='bottom',
-            bbox=dict(boxstyle="round,pad=0.3", fc='#78350f', ec='#fbbf24'))
+    splits = [
+        {
+            "tag": "TRAINING SPLIT",
+            "period": "03/2020 — 01/2024 (46 Months)",
+            "x": 0.8, "y": 3.2, "w": 3.2, "h": 2.2,
+            "col": '#1d4ed8', "top": '#60a5fa', "side": '#1e40af',
+            "contract": ["Fit SimpleImputer (median)", "Fit StandardScaler (μ, σ)", "Model parameters learning"]
+        },
+        {
+            "tag": "VALIDATION SPLIT",
+            "period": "01/2024 — 11/2024 (10 Months)",
+            "x": 5.2, "y": 3.2, "w": 2.8, "h": 2.2,
+            "col": '#b45309', "top": '#fde047', "side": '#92400e',
+            "contract": ["Transform only (stored μ, σ)", "Early stopping threshold", "Architecture hyperparameter tuning"]
+        },
+        {
+            "tag": "OUT-OF-SAMPLE TEST",
+            "period": "11/2024 — 08/2025 (10 Months)",
+            "x": 9.2, "y": 3.2, "w": 3.4, "h": 2.2,
+            "col": '#047857', "top": '#34d399', "side": '#065f46',
+            "contract": ["14,385 valid evaluation records", "Transform only (zero leakage)", "16 continuous segments for bootstrap"]
+        }
+    ]
 
-    draw_3d_box(ax, x=9, y=0, z=0, dx=3.2, dy=3, dz=1.8, color='#10b981', alpha=0.8, edge_color='#a7f3d0')
-    ax.text(10.6, 1.5, 2.1, "TEST SPLIT (14,385 records)\n11/2024 - 08/2025\n(Strict Zero Leakage)",
-            color='#ffffff', fontsize=9, fontweight='bold', ha='center', va='bottom',
-            bbox=dict(boxstyle="round,pad=0.3", fc='#064e3b', ec='#34d399'))
+    for sp in splits:
+        cx, cy = draw_isometric_block(ax, sp["x"], sp["y"], sp["w"], sp["h"], depth=0.7,
+                                     color=sp["col"], top_color=sp["top"], side_color=sp["side"],
+                                     alpha=0.85, edge_color='#ffffff')
 
-    # Isolation barriers
-    draw_3d_box(ax, x=5.3, y=-0.5, z=0, dx=0.4, dy=4, dz=2.5, color='#ef4444', alpha=0.4, edge_color='#f87171')
-    ax.text(5.5, 2, 3.0, "BARRIER 1:\nNo Lookahead", color='#fca5a5', fontsize=8, ha='center', fontweight='bold')
+        # Inside block text
+        ax.text(cx, cy + 0.35, sp["tag"], color='#ffffff', fontsize=12, fontweight='bold', ha='center', va='center')
+        ax.text(cx, cy - 0.35, sp["period"], color='#e0f2fe', fontsize=9.5, ha='center', va='center')
 
-    draw_3d_box(ax, x=8.4, y=-0.5, z=0, dx=0.4, dy=4, dz=2.5, color='#ef4444', alpha=0.4, edge_color='#f87171')
-    ax.text(8.6, 2, 3.0, "BARRIER 2:\nZero Test Tuning", color='#fca5a5', fontsize=8, ha='center', fontweight='bold')
+        # Contract spec below
+        box_y = 1.3
+        bbox_props = dict(boxstyle="round,pad=0.5", fc='#1e293b', ec=sp["col"], lw=1.5)
+        spec_text = "\n".join([f"✓ {c}" for c in sp["contract"]])
+        ax.text(sp["x"] + sp["w"]/2, box_y, spec_text, color='#e2e8f0', fontsize=9.5, ha='center', va='top', bbox=bbox_props)
 
-    ax.set_xlim(-1, 13)
-    ax.set_ylim(-1, 5)
-    ax.set_zlim(0, 4)
-    ax.view_init(elev=22, azim=-50)
+    # Isolation barriers between splits
+    for x_bar, label in [(4.4, "BARRIER 1\nNo Future Leakage"), (8.4, "BARRIER 2\nZero Test Optimization")]:
+        # Draw red dashed wall
+        ax.plot([x_bar, x_bar], [2.2, 5.8], color='#ef4444', lw=2.2, ls='--', zorder=5)
+        ax.text(x_bar, 6.0, label, color='#fca5a5', fontsize=8.5, fontweight='bold', ha='center', va='bottom',
+                bbox=dict(boxstyle="square,pad=0.25", fc='#450a0a', ec='#ef4444', lw=1.2))
+
+    ax.set_xlim(0, 13.5)
+    ax.set_ylim(0, 7.5)
     ax.axis('off')
-    plt.title("Strict Chronological Data Splitting & Zero Data Leakage Contract",
-              color='#f8fafc', fontsize=13, fontweight='bold', pad=15)
+
     plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "2_preprocessing_contract_3d.png", dpi=300, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    plt.savefig(OUTPUT_DIR / "2_preprocessing_contract_3d.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
     plt.close()
-    print("Saved 2_preprocessing_contract_3d.png")
+    print("Saved 2_preprocessing_contract_3d.png (Cleaned)")
 
 
 # -----------------------------------------------------------------------------
-# Figure 3: 3_model_benchmark_3d.png
+# FIGURE 3: 3_model_benchmark_3d.png
 # -----------------------------------------------------------------------------
 def make_fig3_model_benchmark():
-    fig = plt.figure(figsize=(12, 7), dpi=300)
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_facecolor('#0f172a')
-    fig.patch.set_facecolor('#0f172a')
+    fig, ax = plt.subplots(figsize=(15, 8.5), dpi=300)
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
 
-    # Models and metrics
-    models = ['Persistence\n(Naive)', 'Moving\nAverage', 'Ridge', 'XGBoost', 'Residual KAN\n(Ensemble 5s)']
-    mae_vals = [598.36, 1016.16, 730.96, 645.24, 519.78]
-    rmse_vals = [1160.44, 1586.70, 1186.89, 1155.21, 1019.95]
-    colors = ['#64748b', '#94a3b8', '#38bdf8', '#3b82f6', '#10b981']
+    add_header(ax, "Comparative Out-of-Sample Performance",
+               "Error Metric Comparison Across Benchmarked Families (30-min Horizon)",
+               "Evaluated on 14,385 out-of-sample test samples | Feeder 480 Tan Hung")
 
-    x_base = np.arange(len(models)) * 2.2
+    models = [
+        {"name": "Persistence\n(Naive)", "mae": 598.36, "rmse": 1160.44, "col": '#64748b', "top": '#94a3b8', "side": '#475569', "delta": "Baseline (0.00%)"},
+        {"name": "Moving\nAverage (1.5h)", "mae": 1016.16, "rmse": 1586.70, "col": '#475569', "top": '#64748b', "side": '#334155', "delta": "-69.82%"},
+        {"name": "Ridge\nRegression", "mae": 730.96, "rmse": 1186.89, "col": '#0284c7', "top": '#38bdf8', "side": '#0369a1', "delta": "-22.16%"},
+        {"name": "XGBoost\nRegressor", "mae": 645.24, "rmse": 1155.21, "col": '#2563eb', "top": '#60a5fa', "side": '#1d4ed8', "delta": "-7.83%"},
+        {"name": "Residual KAN\n(5-Seed Ensemble)", "mae": 519.78, "rmse": 1019.95, "col": '#059669', "top": '#34d399', "side": '#047857', "delta": "+13.13% (Best)"}
+    ]
 
-    for i in range(len(models)):
-        # Draw MAE bar (normalized height for 3D visual)
-        h_mae = mae_vals[i] / 400.0
-        draw_3d_box(ax, x=x_base[i], y=1, z=0, dx=0.8, dy=0.8, dz=h_mae, color=colors[i], alpha=0.85)
-        ax.text(x_base[i] + 0.4, 1.4, h_mae + 0.1, f"{mae_vals[i]:.1f}\nkW",
-                color='#ffffff', fontsize=8, ha='center', va='bottom', fontweight='bold')
+    x_start = 0.8
+    step = 2.5
 
-        # Draw RMSE bar
-        h_rmse = rmse_vals[i] / 400.0
-        draw_3d_box(ax, x=x_base[i] + 0.9, y=1, z=0, dx=0.8, dy=0.8, dz=h_rmse, color=colors[i], alpha=0.55)
-        ax.text(x_base[i] + 1.3, 1.4, h_rmse + 0.1, f"{rmse_vals[i]:.1f}\nkW",
-                color='#cbd5e1', fontsize=8, ha='center', va='bottom')
+    for i, m in enumerate(models):
+        curr_x = x_start + i * step
+        # Height scaled proportionally
+        h_mae = (m["mae"] / 600.0) * 1.5
+        h_rmse = (m["rmse"] / 1200.0) * 2.2
 
-        # Model label
-        ax.text(x_base[i] + 0.8, 0.4, 0, models[i], color='#f1f5f9', fontsize=8.5, ha='center', va='top', fontweight='bold')
+        # 1. RMSE block (taller, behind)
+        draw_isometric_block(ax, curr_x + 0.35, 2.5, 0.9, h_rmse, depth=0.5,
+                             color=m["col"], top_color=m["top"], side_color=m["side"], alpha=0.4, edge_color='#94a3b8')
 
-    # Legend annotations
-    ax.text(0, 3.2, 3.8, "■ Solid: MAE (kW)   |   ▨ Shaded: RMSE (kW)", color='#38bdf8', fontsize=10, fontweight='bold',
-            bbox=dict(boxstyle="round,pad=0.4", fc='#1e293b', ec='#475569'))
-    ax.text(8.8, 3.2, 3.8, "Residual KAN Ensemble:\nΔMAE: -13.13%\nΔRMSE: -12.11%", color='#34d399', fontsize=9.5, fontweight='bold',
-            bbox=dict(boxstyle="round,pad=0.4", fc='#064e3b', ec='#10b981'))
+        # 2. MAE block (front)
+        draw_isometric_block(ax, curr_x, 2.5, 0.9, h_mae, depth=0.5,
+                             color=m["col"], top_color=m["top"], side_color=m["side"], alpha=0.9, edge_color='#ffffff')
 
-    ax.set_xlim(-1, 11.5)
-    ax.set_ylim(0, 4)
-    ax.set_zlim(0, 4.8)
-    ax.view_init(elev=20, azim=-55)
+        # Model label above blocks
+        ax.text(curr_x + 0.6, 5.7, m["name"], color='#ffffff', fontsize=10.5, fontweight='bold', ha='center', va='bottom')
+
+        # Score box below blocks
+        bbox_props = dict(boxstyle="round,pad=0.4", fc='#1e293b', ec=m["col"], lw=1.5)
+        score_text = f"MAE:  {m['mae']:.1f} kW\nRMSE: {m['rmse']:.1f} kW\nΔMAE: {m['delta']}"
+        ax.text(curr_x + 0.6, 1.8, score_text, color='#e2e8f0', fontsize=9, ha='center', va='top', bbox=bbox_props)
+
+    # Legend at bottom center
+    legend_text = "■ Solid Front: MAE (kW)   |   ▨ Shaded Back: RMSE (kW)   |   Evaluation Set: 14,385 Out-of-sample Records"
+    ax.text(0.5, 0.05, legend_text, transform=ax.transAxes, color='#38bdf8', fontsize=10, ha='center',
+            bbox=dict(boxstyle="round,pad=0.3", fc='#111827', ec='#1e293b', lw=1.2))
+
+    ax.set_xlim(0, 13.8)
+    ax.set_ylim(0, 7.5)
     ax.axis('off')
-    plt.title("Error Metric Comparison Across Benchmarked Families (30-min Horizon)",
-              color='#f8fafc', fontsize=13, fontweight='bold', pad=15)
+
     plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "3_model_benchmark_3d.png", dpi=300, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    plt.savefig(OUTPUT_DIR / "3_model_benchmark_3d.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
     plt.close()
-    print("Saved 3_model_benchmark_3d.png")
+    print("Saved 3_model_benchmark_3d.png (Cleaned)")
 
 
 # -----------------------------------------------------------------------------
-# Figure 4: 4_kan_ensemble_3d.png
+# FIGURE 4: 4_kan_ensemble_3d.png
 # -----------------------------------------------------------------------------
 def make_fig4_kan_ensemble():
-    fig = plt.figure(figsize=(12, 7), dpi=300)
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_facecolor('#0b0f19')
-    fig.patch.set_facecolor('#0b0f19')
+    fig, ax = plt.subplots(figsize=(15, 8.5), dpi=300)
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
+
+    add_header(ax, "Ensemble Architecture & Multi-Seed Stability",
+               "Uniform 5-Seed Residual KAN Ensembling Pipeline",
+               "Seeds: [42, 101, 2024, 7, 999] | Unweighted Average (Zero Test Overfitting)")
 
     seeds = [42, 101, 2024, 7, 999]
-    y_offsets = [0, 1.8, 3.6, 5.4, 7.2]
+    y_coords = [5.6, 4.6, 3.6, 2.6, 1.6]
 
-    # Draw 5 individual seed model blocks
-    for i, (seed, y_pos) in enumerate(zip(seeds, y_offsets)):
-        draw_3d_box(ax, x=1, y=y_pos, z=0, dx=2.5, dy=1.2, dz=1.2, color='#6366f1', alpha=0.8, edge_color='#a5b4fc')
-        ax.text(2.25, y_pos + 0.6, 1.4, f"Seed {seed}\nResidual KAN", color='#ffffff', fontsize=8.5,
-                ha='center', va='bottom', fontweight='bold')
-        # Arrow towards averaging block
-        ax.quiver(3.7, y_pos + 0.6, 0.6, 2.0, (3.6 - y_pos)*0.25, 0, color='#818cf8', arrow_length_ratio=0.25, linewidth=2)
+    # Draw 5 individual seed model blocks (Left column)
+    for s, y_pos in zip(seeds, y_coords):
+        draw_isometric_block(ax, x=1.0, y=y_pos, w=2.6, h=0.7, depth=0.4,
+                             color='#4f46e5', top_color='#818cf8', side_color='#3730a3',
+                             alpha=0.85, edge_color='#ffffff')
+        ax.text(2.3, y_pos + 0.35, f"Residual KAN (Seed {s})", color='#ffffff', fontsize=9.5, fontweight='bold', ha='center', va='center')
 
-    # Central Uniform Ensemble Block
-    draw_3d_box(ax, x=6.5, y=2.6, z=-0.2, dx=3.5, dy=3.2, dz=1.8, color='#10b981', alpha=0.9, edge_color='#6ee7b7')
-    ax.text(8.25, 4.2, 2.0, "Uniform 5-Seed Ensemble\ny_ens = (1/5) * Σ y_i\nZero Test Weight Tuning",
-            color='#ffffff', fontsize=10, ha='center', va='bottom', fontweight='bold',
-            bbox=dict(boxstyle="round,pad=0.4", fc='#064e3b', ec='#34d399'))
+        # Arrow from seed to aggregator
+        ax.annotate("", xy=(5.2, 3.8), xytext=(4.0, y_pos + 0.35),
+                    arrowprops=dict(arrowstyle="->", color='#818cf8', lw=1.8, mutation_scale=14))
 
-    # Final output arrow
-    ax.quiver(10.2, 4.2, 0.7, 1.8, 0, 0, color='#34d399', arrow_length_ratio=0.3, linewidth=2.5)
-    ax.text(12.2, 4.2, 0.7, "Final Forecast\nP_pred (kW)", color='#a7f3d0', fontsize=9.5, fontweight='bold', va='center')
+    # Central Uniform Aggregator Block
+    cx, cy = draw_isometric_block(ax, x=5.3, y=2.5, w=3.4, h=2.5, depth=0.8,
+                                 color='#059669', top_color='#34d399', side_color='#047857',
+                                 alpha=0.9, edge_color='#ffffff')
+    ax.text(cx, cy + 0.45, "UNIFORM ENSEMBLE", color='#ffffff', fontsize=12, fontweight='bold', ha='center', va='center')
+    ax.text(cx, cy - 0.2, "ŷ_ens = (1/5) * Σ ŷ_i\nFixed w_i = 0.2", color='#d1fae5', fontsize=10, ha='center', va='center')
 
-    ax.set_xlim(0, 13)
-    ax.set_ylim(-1, 9)
-    ax.set_zlim(-0.5, 3.5)
-    ax.view_init(elev=26, azim=-60)
+    # Arrow from aggregator to output
+    ax.annotate("", xy=(10.0, 3.8), xytext=(9.3, 3.8),
+                arrowprops=dict(arrowstyle="->", color='#34d399', lw=2.5, mutation_scale=18))
+
+    # Output Block (Right column)
+    ox, oy = draw_isometric_block(ax, x=10.1, y=2.8, w=2.8, h=2.0, depth=0.6,
+                                  color='#0284c7', top_color='#38bdf8', side_color='#0369a1',
+                                  alpha=0.85, edge_color='#ffffff')
+    ax.text(ox, oy + 0.3, "FINAL PREDICTION", color='#ffffff', fontsize=11, fontweight='bold', ha='center', va='center')
+    ax.text(ox, oy - 0.3, "P_pred (t+1)\n[kW]", color='#e0f2fe', fontsize=10, ha='center', va='center')
+
+    # Metric annotation box below
+    summary_text = (
+        "• Single KAN Stability: MAE = 528.99 ± 12.23 kW | RMSE = 1033.35 ± 13.78 kW (5 Seeds)\n"
+        "• Ensemble Performance: MAE = 519.78 kW (-13.13%) | RMSE = 1019.95 kW (-12.11%) | R² = 0.9050\n"
+        "• Zero-Leakage Guarantee: No weights tuned on the out-of-sample test split"
+    )
+    ax.text(0.5, 0.06, summary_text, transform=ax.transAxes, color='#f8fafc', fontsize=9.5, ha='center',
+            bbox=dict(boxstyle="round,pad=0.5", fc='#1e293b', ec='#059669', lw=1.5))
+
+    ax.set_xlim(0, 13.5)
+    ax.set_ylim(0, 7.5)
     ax.axis('off')
-    plt.title("Multi-Seed Residual KAN Architecture & Uniform Ensembling Pipeline",
-              color='#f8fafc', fontsize=13, fontweight='bold', pad=15)
+
     plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "4_kan_ensemble_3d.png", dpi=300, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    plt.savefig(OUTPUT_DIR / "4_kan_ensemble_3d.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
     plt.close()
-    print("Saved 4_kan_ensemble_3d.png")
+    print("Saved 4_kan_ensemble_3d.png (Cleaned)")
 
 
 # -----------------------------------------------------------------------------
-# Figure 5: 5_evaluation_3d.png
+# FIGURE 5: 5_evaluation_3d.png
 # -----------------------------------------------------------------------------
 def make_fig5_evaluation():
-    fig = plt.figure(figsize=(12, 7), dpi=300)
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_facecolor('#0f172a')
-    fig.patch.set_facecolor('#0f172a')
+    fig, ax = plt.subplots(figsize=(15, 8.5), dpi=300)
+    fig.patch.set_facecolor(BG_COLOR)
+    ax.set_facecolor(BG_COLOR)
 
-    # Draw evaluation cube representing Contiguous Moving-Block Bootstrap
-    draw_3d_box(ax, x=1, y=1, z=0, dx=4, dy=3, dz=2, color='#0284c7', alpha=0.7, edge_color='#7dd3fc')
-    ax.text(3, 2.5, 2.3, "Contiguous Moving-Block\nBootstrap (B=1000)\nBlock 48 & Block 336",
-            color='#ffffff', fontsize=9.5, ha='center', va='bottom', fontweight='bold',
-            bbox=dict(boxstyle="round,pad=0.3", fc='#0c4a6e', ec='#38bdf8'))
+    add_header(ax, "Statistical Verification & Multi-Metric Trade-Offs",
+               "Evaluation Metrics and Baseline Trade-offs Analysis",
+               "Contiguous Moving-Block Bootstrap (B=1,000) & Metric Asymmetry Verification")
 
-    # Draw Multi-metric trade-off space
-    draw_3d_box(ax, x=7, y=1, z=0, dx=4, dy=3, dz=2, color='#059669', alpha=0.7, edge_color='#6ee7b7')
-    ax.text(9, 2.5, 2.3, "Multi-Metric Evaluation:\n• MAE / RMSE (KAN Wins)\n• sMAPE (Persistence Wins)\n• Strict Integrity",
-            color='#ffffff', fontsize=9.5, ha='center', va='bottom', fontweight='bold',
-            bbox=dict(boxstyle="round,pad=0.3", fc='#064e3b', ec='#34d399'))
+    # Block 1: Bootstrap Rigor
+    b1_x = 1.2
+    draw_isometric_block(ax, x=b1_x, y=2.8, w=4.5, h=2.5, depth=0.7,
+                         color='#0284c7', top_color='#38bdf8', side_color='#0369a1',
+                         alpha=0.85, edge_color='#ffffff')
+    ax.text(b1_x + 2.25, 4.3, "CONTIGUOUS BOOTSTRAP", color='#ffffff', fontsize=12, fontweight='bold', ha='center')
+    ax.text(b1_x + 2.25, 3.6, "Moving-Block (B = 1,000)\nBlock 48 (24h) & Block 336 (7d)",
+            color='#e0f2fe', fontsize=10, ha='center')
 
-    ax.quiver(5.2, 2.5, 1.0, 1.6, 0, 0, color='#38bdf8', arrow_length_ratio=0.3, linewidth=2.5)
+    b1_desc = (
+        "• Resampling strictly within 16 continuous test segments\n"
+        "• Zero cross-gap leakage over missing telemetry blackouts\n"
+        "• Validates statistical significance of error reductions"
+    )
+    ax.text(b1_x + 2.25, 1.4, b1_desc, color='#e2e8f0', fontsize=9.5, ha='center', va='top',
+            bbox=dict(boxstyle="round,pad=0.5", fc='#1e293b', ec='#0284c7', lw=1.5))
 
-    ax.set_xlim(0, 12)
-    ax.set_ylim(0, 5)
-    ax.set_zlim(0, 3.5)
-    ax.view_init(elev=22, azim=-50)
+    # Arrow between blocks
+    ax.annotate("", xy=(7.2, 4.0), xytext=(6.3, 4.0),
+                arrowprops=dict(arrowstyle="<->", color='#38bdf8', lw=2.5, mutation_scale=18))
+
+    # Block 2: Multi-Metric Trade-Off
+    b2_x = 7.5
+    draw_isometric_block(ax, x=b2_x, y=2.8, w=4.5, h=2.5, depth=0.7,
+                         color='#059669', top_color='#34d399', side_color='#047857',
+                         alpha=0.85, edge_color='#ffffff')
+    ax.text(b2_x + 2.25, 4.3, "METRIC TRADE-OFF ANALYSIS", color='#ffffff', fontsize=12, fontweight='bold', ha='center')
+    ax.text(b2_x + 2.25, 3.6, "Objective Loss Asymmetry\nResidual KAN vs Persistence Naive",
+            color='#d1fae5', fontsize=10, ha='center')
+
+    b2_desc = (
+        "• MAE: KAN Ensemble wins (519.78 vs 598.36 kW | -13.13%)\n"
+        "• RMSE: KAN Ensemble wins (1019.95 vs 1160.44 kW | -12.11%)\n"
+        "• sMAPE: Persistence Naive wins (13.35% vs 18.96%)\n"
+        "• Conclusion: Models must be chosen based on dispatch penalty"
+    )
+    ax.text(b2_x + 2.25, 1.4, b2_desc, color='#e2e8f0', fontsize=9.5, ha='center', va='top',
+            bbox=dict(boxstyle="round,pad=0.5", fc='#1e293b', ec='#059669', lw=1.5))
+
+    ax.set_xlim(0, 13.5)
+    ax.set_ylim(0, 7.5)
     ax.axis('off')
-    plt.title("Statistical Significance Validation & Multi-Metric Trade-off Verification",
-              color='#f8fafc', fontsize=13, fontweight='bold', pad=15)
+
     plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "5_evaluation_3d.png", dpi=300, facecolor=fig.get_facecolor(), bbox_inches='tight')
+    plt.savefig(OUTPUT_DIR / "5_evaluation_3d.png", dpi=300, facecolor=BG_COLOR, bbox_inches='tight')
     plt.close()
-    print("Saved 5_evaluation_3d.png")
+    print("Saved 5_evaluation_3d.png (Cleaned)")
 
 
 if __name__ == "__main__":
-    print("Generating 3D architecture figures...")
+    print("Regenerating clean 3D isometric architecture figures (Zero Overlap)...")
     make_fig1_data_pipeline()
     make_fig2_preprocessing_contract()
     make_fig3_model_benchmark()
     make_fig4_kan_ensemble()
     make_fig5_evaluation()
-    print("All 5 figures generated successfully at docs/figures/!")
+    print("All 5 clean figures regenerated successfully in docs/figures/!")
